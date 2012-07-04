@@ -4,6 +4,14 @@
     "manifest_version": 2,
     "incognito": "split",
     "description": "A simple, sync-able text pad similar to Write Space",
+    "icons": {
+        "16": "images/icon-16.png",
+        "19": "images/icon.png",
+        "48": "images/icon-48.png",
+        "64": "images/icon-64.png",
+        "128": "images/icon-128.png",
+        "512": "images/icon-512.png"
+    },
     "browser_action": {
         "default_icon": "images/icon.png"
     },
