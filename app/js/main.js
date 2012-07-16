@@ -9,14 +9,13 @@
  */
 (function ($, chrome) {
     'use strict';
-    var CHANGE_DELAY,
+    var CHANGE_DELAY = 30000, // 30 sync delay
         remoteStoredText,
         bookmark,
         bookmarkId,
         bookmarkUrlString = 'http://simpleTextSyncData?data=',
         $textArea = $('#text'),
         queryStringIdx,
-        remoteStoredText,
         onChanged,
         onChangedBounced,
         url;
@@ -57,7 +56,6 @@
     };
     // don't overload the bookmark API
     onChangedBounced = _.debounce(onChanged, CHANGE_DELAY);
-
     chrome.bookmarks.onChanged.addListener(onChangedBounced);
 
-})(jQuery, chrome)
+})(jQuery, chrome);
