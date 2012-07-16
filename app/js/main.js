@@ -10,34 +10,36 @@
 (function ($, chrome) {
     'use strict';
     var CHANGE_DELAY = 6000, // 6 second sync delay
+        STORAGE_KEY = 'text',
         remoteStoredText = '',
         $textArea = $('#text'),
-        storage = chrome.storage;
+        storage = chrome.storage,
+        storageObject = {};
+
 
     // create bookmark to store data (if doesn't exist)
-    storage.sync.get('text', function(items) {
-        if (items.text != null) {
-            remoteStoredText = items.text;
+    storage.sync.get(STORAGE_KEY, function(items) {
+        if (items[STORAGE_KEY] != null) {
+            remoteStoredText = items[STORAGE_KEY];
         } else {
             // create the stored text area
-            storage.set({
-                text: remoteStoredText // default to empty string
-            }, function(result) {
-                // do something?
-            });
+            var storageObject = {};
+            storageObject[STORAGE_KEY] = remoteStoredText;
+            storage.sync.set(storageObject, function(result) { /* empty */ });
         }
-        $textArea.val(remoteStoredText); // set the value either way
+        $textArea.val(remoteStoredText); // set the value locally either way
     });
 
     // update the bookmark which in turns fires the onChange event below
     $textArea.on('keyup', function(evt, data) {
-        storage.sync.set({text: $textArea.val()}, function(result) { /* empty */ });
+        storageObject[STORAGE_KEY] = $textArea.val();
+        storage.sync.set(storageObject, function(result) { /* empty */ });
     });
 
     // don't overload the bookmark API
     storage.onChanged.addListener(
         _.debounce(function(changes, namespace) {
-            remoteStoredText = changes.text;
+            remoteStoredText = changes[STORAGE_KEY].newValue;
             $textArea.val(remoteStoredText || '');
         }, CHANGE_DELAY));
 
