@@ -1,4 +1,5 @@
 /* Copyright 2012 Jared M. Scott */
+'use strict';
 /**
  * This work is licensed under the Creative Commons Attribution 3.0 Unported License.
  *  To view a copy of this license, visit http://creativecommons.org/licenses/by/3.0/
@@ -7,50 +8,47 @@
  *      444 Castro Street, Suite 900,
  *      Mountain View, California, 94041, USA.
  */
-(function ($, chrome) {
-    'use strict';
-    var CHANGE_DELAY = 6000, // 6 second sync delay
-        STORAGE_KEY = 'text',
-        remoteStoredText = '',
-        $textArea = $('#text'),
-        storage = chrome.storage,
-        storageObject = {};
+((chrome) => {
+    let CHANGE_DELAY = (chrome.storage.sync.MAX_WRITE_OPERATIONS_PER_HOUR / 3600 ) * 4000, // 2 second sync delay
+      LEGACY_STORAGE_KEY = 'text',
+      STORAGE_KEY = 'v2',
+      remoteStoredText = '',
+      textAreaEl = document.getElementById('text'),
+      storage = chrome.storage,
+      storageObject = {};
 
+    const updateUsage = () => {
+        storage.sync.getBytesInUse(null, inUse => document.getElementById('num-chars').innerText = inUse);
+    };
 
-    // create bookmark to store data (if doesn't exist)
-    storage.sync.get(STORAGE_KEY, function(items) {
-        if (items[STORAGE_KEY] != null) {
-            remoteStoredText = items[STORAGE_KEY];
-        } else {
-            // create the stored text area
-            var storageObject = {};
+    // Set the number of bytes in use
+    updateUsage();
+
+    // get or create key to store data
+    storage.sync.get([LEGACY_STORAGE_KEY, STORAGE_KEY], items => {
+        if (items[LEGACY_STORAGE_KEY] != null) {
+            // Migrate stored data from the previous version to the new version
+            remoteStoredText = items[LEGACY_STORAGE_KEY];
             storageObject[STORAGE_KEY] = remoteStoredText;
-            storage.sync.set(storageObject, function(result) { /* empty */ });
+            storage.sync.set(storageObject);
+            // Remove the legacy key
+            storage.sync.remove(LEGACY_STORAGE_KEY);
+        } else if (items[STORAGE_KEY] != null) {
+            remoteStoredText = items[STORAGE_KEY];
         }
-        $textArea.val(remoteStoredText); // set the value locally either way
+        // Value defaults to an empty string if there is no stored value
+        textAreaEl.value = remoteStoredText;
     });
 
-    // update the bookmark which in turns fires the onChange event below
-    $textArea.on('keyup', function(evt, data) {
-        storageObject[STORAGE_KEY] = $textArea.val();
+    const throttledStorageUpdate = _.throttle(e => {
+        storageObject[STORAGE_KEY] = textAreaEl.value;
         storage.sync.set(storageObject, function(result) { /* empty */ });
-    });
+    }, CHANGE_DELAY);
 
-    // don't overload the bookmark API
-    storage.onChanged.addListener(
-        _.debounce(function(changes, namespace) {
-            remoteStoredText = changes[STORAGE_KEY].newValue;
-            $textArea.val(remoteStoredText || '');
-        }, CHANGE_DELAY));
+    const throttledUsageUpdate = _.throttle(updateUsage, 1000);
 
-})(jQuery, chrome);
+    // update storage which in turns fires the onChange event below
+    textAreaEl.addEventListener('keyup', throttledStorageUpdate);
+    textAreaEl.addEventListener('keyup', throttledUsageUpdate);
 
-var _gaq = _gaq || [];
-_gaq.push(['_setAccount', 'UA-33436156-1']);
-_gaq.push(['_trackPageview']);
-// Add in Google Analytics
-(function() {
-    var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-    ga.src = 'https://ssl.google-analytics.com/ga.js';
-    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
-})();
+})(chrome);

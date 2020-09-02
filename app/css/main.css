@@ -1,6 +1,6 @@
 /* Copyright 2012 Jared M. Scott */
 /**
- * This work is licensed under the Creative Commons Attribution 3.0 Unported License.
+ * This work is licensed under the Creative Commons Attribution 3.0 Un-ported License.
  *  To view a copy of this license, visit http://creativecommons.org/licenses/by/3.0/
  *  or send a letter to
  *      Creative Commons,
@@ -28,6 +28,12 @@ textarea {
     resize: none;
     font-family: monospace;
     font-size: 14px;
+}
+
+#info {
+    color: #B4B4B4;
+    text-align: right;
+    margin-right: 1rem;
 }
 
 textarea::-webkit-scrollbar {
