@@ -1,5 +1,4 @@
 /* Copyright 2012-2020 Jared M. Scott */
-'use strict';
 /**
  * This work is licensed under the Creative Commons Attribution 3.0 Un-ported License.
  *  To view a copy of this license, visit http://creativecommons.org/licenses/by/3.0/
@@ -10,8 +9,6 @@
  */
 (function (chrome) {
   chrome.browserAction.onClicked.addListener(function (tab) {
-    chrome.tabs.create({url: chrome.extension.getURL("html/index.html")});
+    chrome.tabs.create({ url: chrome.extension.getURL('html/index.html') });
   });
-
 })(chrome);
-

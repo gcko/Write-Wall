@@ -8,34 +8,34 @@
  *      Mountain View, California, 94041, USA.
  */
 body {
-    position: absolute;
-    height: 100%;
-    width: 100%;
-    overflow: hidden;
-    background-color: #111111;
+  position: absolute;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background-color: #111111;
 }
 
 textarea {
-    display: block;
-    height: 95%;
-    width: 45%;
-    min-width: 400px;
-    margin: 0 auto;
-    background-color: #111111;
-    color: #B4B4B4;
-    border: none;
-    outline: medium none;
-    resize: none;
-    font-family: monospace;
-    font-size: 14px;
+  display: block;
+  height: 95%;
+  width: 45%;
+  min-width: 400px;
+  margin: 0 auto;
+  background-color: #111111;
+  color: #b4b4b4;
+  border: none;
+  outline: medium none;
+  resize: none;
+  font-family: monospace;
+  font-size: 14px;
 }
 
 #info {
-    color: #B4B4B4;
-    text-align: right;
-    margin-right: 1rem;
+  color: #b4b4b4;
+  text-align: right;
+  margin-right: 1rem;
 }
 
 textarea::-webkit-scrollbar {
-    display: none;
+  display: none;
 }

@@ -7,13 +7,21 @@
       444 Castro Street, Suite 900,
       Mountain View, California, 94041, USA.
 !-->
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-<head>
+  <head>
     <title>Simple Text Sync</title>
-    <link href="/css/main.css" type="text/css" media="screen" rel="stylesheet">
+    <link
+      href="/css/main.css"
+      type="text/css"
+      media="screen"
+      rel="stylesheet"
+    />
     <!-- Global site tag (gtag.js) - Google Analytics -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-33436156-1"></script>
+    <script
+      async
+      src="https://www.googletagmanager.com/gtag/js?id=UA-33436156-1"
+    ></script>
     <script>
       window.dataLayer = window.dataLayer || [];
 
@@ -21,16 +29,17 @@
         dataLayer.push(arguments);
       }
 
-      gtag('js', new Date());
+      gtag("js", new Date());
 
-      gtag('config', 'UA-33436156-1');
+      gtag("config", "UA-33436156-1");
     </script>
-</head>
-<body>
-<textarea id="text"></textarea>
-<div id="info"><span id="num-chars"></span> / 8192</div>
+  </head>
+  <body>
+    <!--suppress HtmlFormInputWithoutLabel -->
+    <textarea id="text"></textarea>
+    <div id="info"><span id="num-chars"></span> / 8192</div>
 
-<script src="/js/vendor/lodash-4.17.15.js"></script>
-<script src="/js/main.js"></script>
-</body>
+    <script src="/js/vendor/lodash-4.17.15.js"></script>
+    <script src="/js/main.js"></script>
+  </body>
 </html>
