@@ -8,7 +8,7 @@
  *      Mountain View, California, 94041, USA.
  */
 (function (chrome) {
-  chrome.browserAction.onClicked.addListener(function (tab) {
+  chrome.browserAction.onClicked.addListener(() => {
     chrome.tabs.create({ url: chrome.extension.getURL('html/index.html') });
   });
 })(chrome);
