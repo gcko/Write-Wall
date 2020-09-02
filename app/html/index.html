@@ -1,4 +1,4 @@
-<!--  Copyright 2012 Jared M. Scott !-->
+<!--  Copyright 2012-2020 Jared M. Scott !-->
 <!--
  This work is licensed under the Creative Commons Attribution 3.0 Un-ported License.
   To view a copy of this license, visit http://creativecommons.org/licenses/by/3.0/
@@ -16,17 +16,21 @@
     <script async src="https://www.googletagmanager.com/gtag/js?id=UA-33436156-1"></script>
     <script>
       window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
+
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+
       gtag('js', new Date());
 
       gtag('config', 'UA-33436156-1');
     </script>
 </head>
 <body>
-    <textarea id="text"></textarea>
-    <div id="info"><span id="num-chars"></span> / 8192</div>
+<textarea id="text"></textarea>
+<div id="info"><span id="num-chars"></span> / 8192</div>
 
-    <script src="/js/vendor/lodash-4.17.15.js"></script>
-    <script src="/js/main.js"></script>
+<script src="/js/vendor/lodash-4.17.15.js"></script>
+<script src="/js/main.js"></script>
 </body>
 </html>
