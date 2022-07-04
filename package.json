@@ -1,21 +1,24 @@
 {
   "name": "write-wall",
-  "version": "2.0.0",
+  "version": "2.0.4",
   "description": "A simple, sync-able text pad similar to Write Space",
   "private": true,
   "scripts": {
     "test": "jest",
     "build": "yarn build/build.js"
   },
+  "engines": {
+    "node": "^16.0.0"
+  },
   "dependencies": {},
   "devDependencies": {
     "@testing-library/jest-dom": "^5.11.4",
-    "@testing-library/user-event": "^13.1.9",
-    "eslint": "^7.8.1",
+    "@testing-library/user-event": "^14.2.1",
+    "eslint": "^8.19.0",
     "eslint-config-prettier": "^8.3.0",
-    "eslint-plugin-jest": "^24.3.6",
+    "eslint-plugin-jest": "^26.5.3",
     "eslint-plugin-prettier": "^4.0.0",
-    "jest": "^27.0.6",
+    "jest": "^28.1.2",
     "prettier": "^2.1.1"
   },
   "browserslist": [

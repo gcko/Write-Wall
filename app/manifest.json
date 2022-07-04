@@ -1,6 +1,6 @@
 {
     "name": "Write Wall",
-    "version": "2.0.3",
+    "version": "2.0.4",
     "manifest_version": 2,
     "incognito": "split",
     "description": "A simple, sync-able text pad similar to Write Space",
@@ -22,7 +22,6 @@
         ]
     },
     "permissions": [
-        "tabs",
         "storage"
     ]
 }
