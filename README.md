@@ -8,6 +8,11 @@ I hope you find it as useful as I have and please feel free to fork this project
 
 ## Version history
 
+### 2.0.5 | May 5, 2023
+- Upgrade the manifest.json file to manifest v3
+- Standardize the copyright notices
+- Update to node v20 and switch to using npm from yarn
+
 ### 2.0.4 | Jul 4, 2022
 Remove "Tabs" permission on package
 
