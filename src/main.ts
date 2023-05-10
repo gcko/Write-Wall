@@ -7,6 +7,19 @@
  *         Mountain View, California, 94041, USA.
  */
 
+function throttle (callback: () => void, limit = 0): () => void {
+  let waiting = false;
+  return function (...args): void {
+    if (!waiting) {
+      callback.apply(this, args);
+      waiting = true;
+      setTimeout(function () {
+        waiting = false;
+      }, limit);
+    }
+  }
+}
+
 /* global chrome:readonly, _:readonly */
 ((chrome) => {
   let CHANGE_DELAY =
@@ -14,15 +27,18 @@
     LEGACY_STORAGE_KEY = 'text',
     STORAGE_KEY = 'v2',
     remoteStoredText = '',
-    textAreaEl = document.getElementById('text'),
+    textAreaEl = document.getElementById('text') as HTMLTextAreaElement,
     storage = chrome.storage,
-    storageObject = {};
+    storageObject: Record<string, string> = {};
 
   const updateUsage = () => {
-    storage.sync.getBytesInUse(
-      null,
-      (inUse) => (document.getElementById('num-chars').innerText = `${inUse}`)
-    );
+    const numCharEl = document.getElementById('num-chars')
+    if (numCharEl) {
+      storage.sync.getBytesInUse(
+        null,
+        (inUse) => (numCharEl.innerText = `${inUse}`)
+      );
+    }
   };
 
   // Set the number of bytes in use
@@ -34,9 +50,9 @@
       // Migrate stored data from the previous version to the new version
       remoteStoredText = items[LEGACY_STORAGE_KEY];
       storageObject[STORAGE_KEY] = remoteStoredText;
-      storage.sync.set(storageObject);
+      storage.sync.set(storageObject).catch((e) => console.warn(e));
       // Remove the legacy key
-      storage.sync.remove(LEGACY_STORAGE_KEY);
+      storage.sync.remove(LEGACY_STORAGE_KEY).catch((e) => console.warn(e));
     } else if (items[STORAGE_KEY] != null) {
       remoteStoredText = items[STORAGE_KEY];
     }
@@ -44,12 +60,12 @@
     textAreaEl.value = remoteStoredText;
   });
 
-  const throttledStorageUpdate = _.throttle(() => {
+  const throttledStorageUpdate = throttle(() => {
     storageObject[STORAGE_KEY] = textAreaEl.value;
-    storage.sync.set(storageObject);
+    storage.sync.set(storageObject).catch((e) => console.warn(e));
   }, CHANGE_DELAY);
 
-  const throttledUsageUpdate = _.throttle(updateUsage, 1000);
+  const throttledUsageUpdate = throttle(updateUsage, 1000);
 
   // update storage which in turns fires the onChange event below
   textAreaEl.addEventListener('keyup', throttledStorageUpdate);

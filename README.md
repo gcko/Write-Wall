@@ -8,6 +8,11 @@ I hope you find it as useful as I have and please feel free to fork this project
 
 ## Version history
 
+### 2.1.0 | May 10, 2023
+- Migrate to Typescript
+- Enable Webpack and building via Webpack
+- Remove Dependency on lodash
+
 ### 2.0.5 | May 5, 2023
 - Upgrade the manifest.json file to manifest v3
 - Standardize the copyright notices
