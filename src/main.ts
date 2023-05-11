@@ -19,11 +19,13 @@ function throttle (callback: () => void, limit = 0): () => void {
     }
   }
 }
+const HOUR_IN_SECONDS = 60 * 60;
+const FOUR_SECONDS_IN_MIL = 4000;
 
 /* global chrome:readonly, _:readonly */
 ((chrome) => {
   let CHANGE_DELAY =
-      (chrome.storage.sync.MAX_WRITE_OPERATIONS_PER_HOUR / 3600) * 4000, // 2 second sync delay
+      (chrome.storage.sync.MAX_WRITE_OPERATIONS_PER_HOUR / HOUR_IN_SECONDS) * FOUR_SECONDS_IN_MIL, // 4 second sync delay
     LEGACY_STORAGE_KEY = 'text',
     STORAGE_KEY = 'v2',
     remoteStoredText = '',
@@ -62,12 +64,10 @@ function throttle (callback: () => void, limit = 0): () => void {
 
   const throttledStorageUpdate = throttle(() => {
     storageObject[STORAGE_KEY] = textAreaEl.value;
-    storage.sync.set(storageObject).catch((e) => console.warn(e));
+    storage.sync.set(storageObject).then(updateUsage).catch((e) => console.warn(e));
   }, CHANGE_DELAY);
 
-  const throttledUsageUpdate = throttle(updateUsage, 1000);
 
-  // update storage which in turns fires the onChange event below
+  // update storage which in turn updates usage
   textAreaEl.addEventListener('keyup', throttledStorageUpdate);
-  textAreaEl.addEventListener('keyup', throttledUsageUpdate);
 })(chrome);
