@@ -7,18 +7,8 @@
  *         Mountain View, California, 94041, USA.
  */
 
-function throttle (callback: () => void, limit = 0): () => void {
-  let waiting = false;
-  return function (...args): void {
-    if (!waiting) {
-      callback.apply(this, args);
-      waiting = true;
-      setTimeout(function () {
-        waiting = false;
-      }, limit);
-    }
-  }
-}
+import {throttle} from "./utils";
+
 const HOUR_IN_SECONDS = 60 * 60;
 const FOUR_SECONDS_IN_MIL = 4000;
 

@@ -13,8 +13,8 @@ module.exports = {
   mode: 'production',
   devtool: 'inline-source-map',
   entry: {
-    service_worker: path.resolve(__dirname, '..', 'src', 'service_worker.ts'),
-    main: path.resolve(__dirname, '..', 'src', 'main.ts')
+    main: path.resolve(__dirname, '..', 'src', 'main.ts'),
+    service_worker: path.resolve(__dirname, '..', 'src', 'service_worker.ts')
   },
   output: {
     path: path.join(__dirname, '../dist'),

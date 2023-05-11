@@ -21,6 +21,7 @@
       },
       "plugins": ["prettier", "jest"],
       "rules": {
+        "array-bracket-spacing": ["error", "always", {"singleValue":  true}],
         "consistent-return": ["off"],
         "no-param-reassign": ["error", {"ignorePropertyModificationsFor": ["consoleElement"]}],
         "no-console": ["warn", {"allow": ["warn", "error"]}],
