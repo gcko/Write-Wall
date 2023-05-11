@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "test": "jest",
-    "build": "webpack --config webpack/webpack.config.js"
+    "develop": "webpack --config webpack/webpack.config.js --watch",
+    "build": "webpack --config webpack/webpack.config.js && node build.js"
   },
   "engines": {
     "node": "^20.0.0"
@@ -15,6 +16,7 @@
     "@testing-library/user-event": "^14.4.3",
     "@tsconfig/node20": "^1.0.0",
     "@types/chrome": "^0.0.235",
+    "adm-zip": "^0.5.10",
     "copy-webpack-plugin": "^11.0.0",
     "eslint": "^8.39.0",
     "eslint-config-prettier": "^8.8.0",
