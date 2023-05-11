@@ -8,6 +8,10 @@ I hope you find it as useful as I have and please feel free to fork this project
 
 ## Version history
 
+### 2.1.1 | May 11, 2023
+- Cleanup the usage of magic constants
+- Streamline the throttling behavior
+
 ### 2.1.0 | May 10, 2023
 - Migrate to Typescript
 - Enable Webpack and building via Webpack
