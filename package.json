@@ -1,7 +1,8 @@
 {
   "name": "write-wall",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "A simple, sync-able text pad similar to Write Space",
+  "license": "CC-BY-SA-4.0",
   "private": true,
   "scripts": {
     "test": "jest",
@@ -20,7 +21,7 @@
     "@types/chrome": "^0.0.235",
     "adm-zip": "^0.5.10",
     "copy-webpack-plugin": "^11.0.0",
-    "eslint": "^8.39.0",
+    "eslint": "^8.40.0",
     "eslint-config-prettier": "^8.8.0",
     "eslint-plugin-jest": "^27.2.1",
     "eslint-plugin-prettier": "^4.2.1",
@@ -29,8 +30,8 @@
     "ts-jest": "^29.1.0",
     "ts-loader": "^9.4.2",
     "typescript": "^5.0.4",
-    "webpack": "^5.82.0",
+    "webpack": "^5.82.1",
     "webpack-cli": "^5.1.1",
-    "husky": "^8.0.0"
+    "husky": "^8.0.3"
   }
 }
