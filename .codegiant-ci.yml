@@ -1,0 +1,56 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: task
+spec:
+  steps:
+    - name: init-and-build
+      image: 'node:20'
+      script: |-
+        #!/bin/bash
+        npm install
+        npm run build
+    - name: cg-vulnerability-scan
+      image: codegiant/cg-image-scan
+      env:
+        - name: TRIVY_SCANNERS
+          value: 'vuln,secret'
+  params:
+    - name: artifacts
+      type: array
+      default: []
+  results:
+    - name: cg-vulnerability-scan-images
+      description: >-
+        Write to this file the line separated names of images to be scanned.
+
+        ex: (printf "codegiant/my-image:v2\ncodegiant/my-other-image:v5" | tee
+        $(results.cg-vulnerability-scan-images.path))
+
+        Ensure the docker socket is available to the vulnerability-scan step.
+
+
+---
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: pipeline
+spec:
+  tasks:
+    - taskRef:
+        name: task
+      name: task-run
+      params:
+        - name: artifacts
+          value: []
+
+
+---
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  name: pipeline-run
+spec:
+  pipelineRef:
+    name: pipeline
+
