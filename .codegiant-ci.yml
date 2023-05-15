@@ -42,7 +42,8 @@ spec:
       name: task-run
       params:
         - name: artifacts
-          value: []
+          value:
+            - app.zip
 
 
 ---
