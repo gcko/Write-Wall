@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
-  name: task
+  name: bundle-tasks
 spec:
   steps:
     - name: init-and-build
@@ -33,8 +33,8 @@ metadata:
 spec:
   tasks:
     - taskRef:
-        name: task
-      name: task-run
+        name: bundle-tasks
+      name: bundle
       params:
         - name: artifacts
           value:
