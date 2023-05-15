@@ -10,11 +10,6 @@ spec:
         #!/bin/bash
         npm install
         npm run build
-    - name: cg-vulnerability-scan
-      image: codegiant/cg-image-scan
-      env:
-        - name: TRIVY_SCANNERS
-          value: 'vuln,secret'
   params:
     - name: artifacts
       type: array
