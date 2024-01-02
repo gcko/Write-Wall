@@ -7,8 +7,8 @@
  *         Mountain View, California, 94041, USA.
  */
 
-import {throttle} from './utils';
-import clearAllTimers = jest.clearAllTimers;
+import { throttle } from './utils';
+import { jest, it, expect } from "@jest/globals";
 
 it('should only be called once within 2 seconds', (done) => {
   // expect.assertions(1);
@@ -24,9 +24,10 @@ it('should only be called once within 2 seconds', (done) => {
   throttledMethod();
   try {
     expect(called).toBe(1);
+    jest.clearAllTimers();
     done();
   } catch (error) {
-    done(error);
+    jest.clearAllTimers();
+    done(error as string | Error | undefined);
   }
-  clearAllTimers();
 });

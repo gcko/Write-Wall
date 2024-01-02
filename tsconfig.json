@@ -2,7 +2,7 @@
   "extends": "@tsconfig/node20/tsconfig.json",
   "compilerOptions": {
     "sourceMap": true,
-    "module": "ES2022",
+    "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "rootDir": ".",
     "outDir": "dist/",
@@ -10,9 +10,9 @@
     "noImplicitThis": false,
     "lib": ["dom", "ES2022"],
     "jsx": "react",
-    "typeRoots": ["node_modules/@types"]
+    "typeRoots": ["node_modules/@types"],
   },
   "include": [
     "src/**/*"
-  ]
+  ],
 }
