@@ -7,7 +7,7 @@
  *         Mountain View, California, 94041, USA.
  */
 
-import { throttle } from './utils';
+import { throttle } from './utils.js';
 import { jest, it, expect } from "@jest/globals";
 
 it('should only be called once within 2 seconds', (done) => {

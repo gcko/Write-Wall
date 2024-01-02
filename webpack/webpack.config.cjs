@@ -22,13 +22,21 @@ module.exports = {
     clean: true
   },
   resolve: {
-    extensions: ['.tsx', '.ts', '.js']
+    extensionAlias: {
+      '.js': ['.ts', '.tsx', '.js', '.jsx'],
+    },
+    extensions: ['.tsx', '.ts', '.js'],
   },
   module: {
     rules: [
       {
         test: /\.tsx?$/,
-        loader: 'ts-loader',
+        use: [{
+          loader: 'ts-loader',
+          options: {
+            configFile: path.resolve(__dirname, '..', 'tsconfig.build.json')
+          }
+        }],
         exclude: /node_modules/
       }
     ]

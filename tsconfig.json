@@ -1,18 +1,18 @@
 {
-  "extends": "@tsconfig/node20/tsconfig.json",
   "compilerOptions": {
     "sourceMap": true,
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "rootDir": ".",
-    "outDir": "dist/",
-    "noEmitOnError": true,
+    "outDir": "./dist/",
+    "noEmitOnError": false,
     "noImplicitThis": false,
-    "lib": ["dom", "ES2022"],
-    "jsx": "react",
-    "typeRoots": ["node_modules/@types"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "lib": ["dom", "ES2023"],
+    "target": "ES2022",
+    "typeRoots": ["node_modules/@types"]
   },
-  "include": [
-    "src/**/*"
-  ],
 }
