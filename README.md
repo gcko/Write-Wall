@@ -8,6 +8,11 @@ I hope you find it as useful as I have and please feel free to fork this project
 
 ## Version history
 
+### 2.1.5 | Feb 16, 2024
+- Bump packages to latest
+- Update copyright to include 2024
+- Remove unused package
+
 ### 2.1.2 | May 11, 2023
 - Update licensing language to CC BY SA 4.0
 - Bump packages to latest
