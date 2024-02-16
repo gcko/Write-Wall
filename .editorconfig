@@ -9,5 +9,10 @@ insert_final_newline = true
 max_line_length = 120
 tab_width = 2
 
+[{*.js,*.cjs}]
+ij_javascript_use_double_quotes = false
+ij_javascript_force_quote_style = true
+
 [{*.ats,*.cts,*.mts,*.ts}]
 ij_typescript_use_double_quotes = false
+ij_typescript_force_quote_style = true
