@@ -9,6 +9,6 @@
 
 (function (chrome) {
   chrome.action.onClicked.addListener(() => {
-    chrome.tabs.create({url: chrome.runtime.getURL('html/index.html')}).catch((e) => console.error(e));
+    chrome.tabs.create({ url: chrome.runtime.getURL('html/index.html') }).catch((e) => console.error(e));
   });
 })(chrome);

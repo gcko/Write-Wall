@@ -7,7 +7,7 @@
  *         Mountain View, California, 94041, USA.
  */
 
-const throttle = (callback: () => void, limit = 0): () => void => {
+const throttle = (callback: () => void, limit = 0): (() => void) => {
   let waiting = false;
   return function (...args): void {
     if (!waiting) {
@@ -17,9 +17,7 @@ const throttle = (callback: () => void, limit = 0): () => void => {
         waiting = false;
       }, limit);
     }
-  }
+  };
 };
 
-export {
-  throttle
-}
+export { throttle };

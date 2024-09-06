@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 /*
  * Copyright (c) 2023-2024 Jared M. Scott. This work is licensed under the Creative
  * Commons Attribution 3.0 Un-ported License. To view a copy of this license,
@@ -14,12 +15,12 @@ module.exports = {
   devtool: 'inline-source-map',
   entry: {
     main: path.resolve(__dirname, '..', 'src', 'main.ts'),
-    service_worker: path.resolve(__dirname, '..', 'src', 'service_worker.ts')
+    service_worker: path.resolve(__dirname, '..', 'src', 'service_worker.ts'),
   },
   output: {
     path: path.join(__dirname, '../dist'),
     filename: '[name].bundle.js',
-    clean: true
+    clean: true,
   },
   resolve: {
     extensionAlias: {
@@ -31,20 +32,22 @@ module.exports = {
     rules: [
       {
         test: /\.tsx?$/,
-        use: [{
-          loader: 'ts-loader',
-          options: {
-            configFile: path.resolve(__dirname, '..', 'tsconfig.build.json')
-          }
-        }],
-        exclude: /node_modules/
-      }
-    ]
+        use: [
+          {
+            loader: 'ts-loader',
+            options: {
+              configFile: path.resolve(__dirname, '..', 'tsconfig.build.json'),
+            },
+          },
+        ],
+        exclude: /node_modules/,
+      },
+    ],
   },
   plugins: [
     new CopyPlugin({
       patterns: [
-        {from: '.', to: '.', context: 'public'},
+        { from: '.', to: '.', context: 'public' },
         {
           from: path.resolve(__dirname, '..', 'src', 'css'),
           to: path.resolve(__dirname, '..', 'dist', 'css'),
@@ -59,8 +62,8 @@ module.exports = {
           from: path.resolve(__dirname, '..', 'src', 'images'),
           to: path.resolve(__dirname, '..', 'dist', 'images'),
           context: 'public',
-        }
-      ]
-    })
-  ]
-}
+        },
+      ],
+    }),
+  ],
+};

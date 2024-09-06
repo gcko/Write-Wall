@@ -14,10 +14,11 @@ it('should only be called once within 2 seconds', (done) => {
   // expect.assertions(1);
   let called = 0;
   const throttlePeriod = 50;
-  const callback = () => new Promise((resolve) => {
-    called += 1;
-    resolve(called);
-  });
+  const callback = () =>
+    new Promise((resolve) => {
+      called += 1;
+      resolve(called);
+    });
   const throttledMethod = throttle(callback, throttlePeriod);
   // call it twice right after each other
   throttledMethod();

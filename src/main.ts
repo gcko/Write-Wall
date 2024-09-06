@@ -12,24 +12,20 @@ import { throttle } from './utils.js';
 const HOUR_IN_SECONDS = 60 * 60;
 const FOUR_SECONDS_IN_MIL = 4000;
 
-/* global chrome:readonly, _:readonly */
+/* global chrome:readonly */
 ((chrome) => {
-  let CHANGE_DELAY =
-      (chrome.storage.sync.MAX_WRITE_OPERATIONS_PER_HOUR / HOUR_IN_SECONDS) * FOUR_SECONDS_IN_MIL, // 4 second sync delay
+  const CHANGE_DELAY = (chrome.storage.sync.MAX_WRITE_OPERATIONS_PER_HOUR / HOUR_IN_SECONDS) * FOUR_SECONDS_IN_MIL, // 4 second sync delay
     LEGACY_STORAGE_KEY = 'text',
     STORAGE_KEY = 'v2',
-    remoteStoredText = '',
     textAreaEl = document.getElementById('text') as HTMLTextAreaElement,
     storage = chrome.storage,
     storageObject: Record<string, string> = {};
+  let remoteStoredText = '';
 
   const updateUsage = () => {
-    const numCharEl = document.getElementById('num-chars')
+    const numCharEl = document.getElementById('num-chars');
     if (numCharEl) {
-      storage.sync.getBytesInUse(
-        null,
-        (inUse) => (numCharEl.innerText = `${inUse}`)
-      );
+      storage.sync.getBytesInUse(null, (inUse) => (numCharEl.innerText = `${inUse}`));
     }
   };
 
@@ -54,9 +50,11 @@ const FOUR_SECONDS_IN_MIL = 4000;
 
   const throttledStorageUpdate = throttle(() => {
     storageObject[STORAGE_KEY] = textAreaEl.value;
-    storage.sync.set(storageObject).then(updateUsage).catch((e) => console.warn(e));
+    storage.sync
+      .set(storageObject)
+      .then(updateUsage)
+      .catch((e) => console.warn(e));
   }, CHANGE_DELAY);
-
 
   // update storage which in turn updates usage
   textAreaEl.addEventListener('keyup', throttledStorageUpdate);

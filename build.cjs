@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports,no-console */
 /*
  * Copyright (c) 2023-2024 Jared M. Scott. This work is licensed under the Creative
  * Commons Attribution 3.0 Un-ported License. To view a copy of this license,
@@ -15,17 +16,20 @@ async function main() {
   console.log('Removing existing app.zip file');
   function clean() {
     return new Promise((resolve, reject) => {
-      fs.rm(path.resolve(__dirname, 'app.zip'), {
-        force: true
-      }, (err) => {
-        if (err) {
-          return reject(err);
+      fs.rm(
+        path.resolve(__dirname, 'app.zip'),
+        {
+          force: true,
+        },
+        (err) => {
+          if (err) {
+            return reject(err);
+          }
+          resolve();
         }
-        resolve();
-      });
+      );
     });
   }
-
 
   async function createZipArchive() {
     const outputFileName = 'app.zip';
@@ -44,9 +48,11 @@ async function main() {
   return clean().then(() => createZipArchive());
 }
 
-main().then(() => {
-  console.log('Build finished successfully');
-}).catch((e) => {
-  console.error('Build failed, ', e);
-  process.exitCode = 1;
-});
+main()
+  .then(() => {
+    console.log('Build finished successfully');
+  })
+  .catch((e) => {
+    console.error('Build failed, ', e);
+    process.exitCode = 1;
+  });
