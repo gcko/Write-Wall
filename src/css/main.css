@@ -7,27 +7,38 @@
  *         Mountain View, California, 94041, USA.
  */
 
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
 body {
   position: absolute;
   height: 100%;
   width: 100%;
   overflow: hidden;
-  background-color: #111111;
+  background-color: #060c0c;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 textarea {
   display: block;
   height: 95%;
-  width: 45%;
-  min-width: 400px;
+  width: 100%;
   margin: 0 auto;
-  background-color: #111111;
+  padding: 2rem 1rem 0;
+  background-color: transparent;
   color: #b4b4b4;
   border: none;
   outline: medium none;
   resize: none;
   font-family: monospace;
   font-size: 14px;
+  transition: width 0.5s ease-in-out;
 }
 
 #info {
@@ -38,4 +49,10 @@ textarea {
 
 textarea::-webkit-scrollbar {
   display: none;
+}
+
+@media (min-width: 1024px) {
+  textarea {
+    width: 50%;
+  }
 }

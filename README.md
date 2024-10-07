@@ -8,6 +8,10 @@ I hope you find it as useful as I have and please feel free to fork this project
 
 ## Version history
 
+### 2.2.0 | Oct 7, 2024
+- Bump packages to latest
+- Update styling, allow for ease of use on a mobile device
+
 ### 2.1.6 | Feb 16, 2024
 - Ensure manifest version and Node package are up-to-date 
 
