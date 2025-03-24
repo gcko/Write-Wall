@@ -26,12 +26,12 @@ async function main() {
             return reject(err);
           }
           resolve();
-        }
+        },
       );
     });
   }
 
-  async function createZipArchive() {
+  function createZipArchive() {
     const outputFileName = 'app.zip';
     const zip = new AdmZip();
     zip.addLocalFolder('./dist', undefined, undefined, undefined);

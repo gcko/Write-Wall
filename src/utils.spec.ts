@@ -19,6 +19,7 @@ it('should only be called once within 2 seconds', (done) => {
       called += 1;
       resolve(called);
     });
+  // eslint-disable-next-line @typescript-eslint/no-misused-promises
   const throttledMethod = throttle(callback, throttlePeriod);
   // call it twice right after each other
   throttledMethod();
