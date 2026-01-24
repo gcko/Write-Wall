@@ -24,19 +24,20 @@ Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad b
   - Run `pnpm build` to generate `dist/` and `app.zip`.
 
 ## Scripts (package.json)
-- `pnpm test`: Run Jest tests.
-- `pnpm lint`: Run ESLint.
-- `pnpm lint:fix`: Run ESLint with auto-fix.
+- `pnpm test`: Run Vitest tests.
+- `pnpm lint`: Run Biome checks.
+- `pnpm lint:fix`: Run Biome with auto-fix.
 - `pnpm develop`: Webpack build in watch mode.
 - `pnpm build`: Webpack build + package `dist/` into `app.zip`.
+- `pnpm type:check`: Run TypeScript type checking.
 - `pnpm prepare`: Install Husky hooks.
 - `pnpm check-updates`: Run npm-check-updates in interactive mode.
 
 ## Tooling and Packages
 - TypeScript: Source is `.ts`, built via `ts-loader` and `tsconfig.build.json`.
 - Webpack: Bundles `src/main.ts` and `src/service_worker.ts` into `dist/` and copies `public/`, `src/html`, `src/css`, and `src/images`.
-- Jest + ts-jest: Unit tests run under ESM with `tsconfig.test.json`.
-- ESLint + Prettier: Linting is configured in `eslint.config.mjs` with Prettier rules enforced.
+- Vitest: Unit tests run under ESM with `vitest.config.ts` and `tsconfig.test.json`.
+- Biome: Linting is handled via Biome CLI.
 - Husky: Pre-commit hook runs `pnpm lint` and `pnpm test`.
 - adm-zip: Used by `build.cjs` to create `app.zip`.
 

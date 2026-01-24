@@ -8,6 +8,6 @@
     ".husky/**/*",
     "build.cjs",
     "src/**/*.spec.ts",
-    "jest.config.json"
+    "vitest.config.ts"
   ]
 }

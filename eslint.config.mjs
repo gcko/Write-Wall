@@ -8,7 +8,6 @@ export default tseslint.config(
     languageOptions: {
       globals: {
         ...globals.browser,
-        ...globals.jest,
         ...globals.node,
         ...globals.es2024,
       },
