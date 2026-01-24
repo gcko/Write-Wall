@@ -16,27 +16,28 @@ Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad b
 ## Development Workflow
 - Use `nave` to manage Node versions; `.naverc` defines the version for this repo.
 - Do not use `nvm`.
-- Use `npm install` once to install dependencies.
+- Use `pnpm install` once to install dependencies.
 - For local development:
-  - Run `npm run develop` to build in watch mode.
+  - Run `pnpm develop` to build in watch mode.
   - Load `dist/` as an unpacked extension via `chrome://extensions`.
 - For production builds:
-  - Run `npm run build` to generate `dist/` and `app.zip`.
+  - Run `pnpm build` to generate `dist/` and `app.zip`.
 
 ## Scripts (package.json)
-- `npm run test`: Run Jest tests.
-- `npm run lint`: Run ESLint.
-- `npm run lint:fix`: Run ESLint with auto-fix.
-- `npm run develop`: Webpack build in watch mode.
-- `npm run build`: Webpack build + package `dist/` into `app.zip`.
-- `npm run prepare`: Install Husky hooks.
+- `pnpm test`: Run Jest tests.
+- `pnpm lint`: Run ESLint.
+- `pnpm lint:fix`: Run ESLint with auto-fix.
+- `pnpm develop`: Webpack build in watch mode.
+- `pnpm build`: Webpack build + package `dist/` into `app.zip`.
+- `pnpm prepare`: Install Husky hooks.
+- `pnpm check-updates`: Run npm-check-updates in interactive mode.
 
 ## Tooling and Packages
 - TypeScript: Source is `.ts`, built via `ts-loader` and `tsconfig.build.json`.
 - Webpack: Bundles `src/main.ts` and `src/service_worker.ts` into `dist/` and copies `public/`, `src/html`, `src/css`, and `src/images`.
 - Jest + ts-jest: Unit tests run under ESM with `tsconfig.test.json`.
 - ESLint + Prettier: Linting is configured in `eslint.config.mjs` with Prettier rules enforced.
-- Husky: Pre-commit hook runs `npm run lint` and `npm run test`.
+- Husky: Pre-commit hook runs `pnpm lint` and `pnpm test`.
 - adm-zip: Used by `build.cjs` to create `app.zip`.
 
 ## Chrome Extension Gotchas
