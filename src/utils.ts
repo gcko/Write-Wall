@@ -7,9 +7,12 @@
  *         Mountain View, California, 94041, USA.
  */
 
-const throttle = (callback: () => void, limit = 0): (() => void) => {
+const throttle = <Args extends unknown[], This>(
+  callback: (this: This, ...args: Args) => void,
+  limit = 0,
+): ((this: This, ...args: Args) => void) => {
   let waiting = false;
-  return function (...args): void {
+  return function (this: This, ...args: Args): void {
     if (!waiting) {
       callback.apply(this, args);
       waiting = true;

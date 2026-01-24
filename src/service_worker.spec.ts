@@ -28,8 +28,11 @@ describe('service worker action handler', () => {
 
     expect(addListener).toHaveBeenCalledTimes(1);
     expect(clickHandler).toBeTypeOf('function');
-
-    clickHandler?.();
+    const handler = clickHandler as (() => void) | null;
+    if (!handler) {
+      throw new Error('Expected click handler to be registered');
+    }
+    handler();
 
     expect(chrome.runtime.getURL).toHaveBeenCalledWith('html/index.html');
     expect(chrome.tabs.create).toHaveBeenCalledWith({

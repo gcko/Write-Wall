@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-require-imports,no-console */
 /*
  * Copyright (c) 2023-2026 Jared M. Scott. This work is licensed under the Creative
  * Commons Attribution 3.0 Un-ported License. To view a copy of this license,
