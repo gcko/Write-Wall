@@ -1,8 +1,10 @@
 {
   "compilerOptions": {
     "sourceMap": true,
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "target": "ES2024",
     "rootDir": ".",
     "outDir": "./dist/",
     "noEmitOnError": false,
@@ -11,8 +13,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "lib": ["dom", "ES2023"],
-    "target": "ES2022",
-    "typeRoots": ["node_modules/@types"]
+    "typeRoots": ["node_modules/@types"],
   },
+  "exclude": ["node_modules"]
 }

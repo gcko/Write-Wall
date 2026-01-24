@@ -14,7 +14,8 @@ const FOUR_SECONDS_IN_MIL = 4000;
 
 /* global chrome:readonly */
 ((chrome) => {
-  const CHANGE_DELAY = (chrome.storage.sync.MAX_WRITE_OPERATIONS_PER_HOUR / HOUR_IN_SECONDS) * FOUR_SECONDS_IN_MIL, // 4 second sync delay
+  const CHANGE_DELAY =
+      (chrome.storage.sync.MAX_WRITE_OPERATIONS_PER_HOUR / HOUR_IN_SECONDS) * FOUR_SECONDS_IN_MIL, // 4 second sync delay
     LEGACY_STORAGE_KEY = 'text',
     STORAGE_KEY = 'v2',
     textAreaEl = document.getElementById('text') as HTMLTextAreaElement,
@@ -25,7 +26,7 @@ const FOUR_SECONDS_IN_MIL = 4000;
   const updateUsage = () => {
     const numCharEl = document.getElementById('num-chars');
     if (numCharEl) {
-      storage.sync.getBytesInUse(null, (inUse) => (numCharEl.innerText = `${inUse}`));
+      storage.sync.getBytesInUse(null, (inUse) => (numCharEl.innerText = String(inUse)));
     }
   };
 
@@ -33,27 +34,36 @@ const FOUR_SECONDS_IN_MIL = 4000;
   updateUsage();
 
   // get or create key to store data
-  storage.sync.get([LEGACY_STORAGE_KEY, STORAGE_KEY], (items) => {
-    if (items[LEGACY_STORAGE_KEY] != null) {
-      // Migrate stored data from the previous version to the new version
-      remoteStoredText = items[LEGACY_STORAGE_KEY];
-      storageObject[STORAGE_KEY] = remoteStoredText;
-      storage.sync.set(storageObject).catch((e) => console.warn(e));
-      // Remove the legacy key
-      storage.sync.remove(LEGACY_STORAGE_KEY).catch((e) => console.warn(e));
-    } else if (items[STORAGE_KEY] != null) {
-      remoteStoredText = items[STORAGE_KEY];
-    }
-    // Value defaults to an empty string if there is no stored value
-    textAreaEl.value = remoteStoredText;
-  });
+  storage.sync.get(
+    [LEGACY_STORAGE_KEY, STORAGE_KEY],
+    (items: Record<string, string | undefined>) => {
+      if (items[LEGACY_STORAGE_KEY] != null) {
+        // Migrate stored data from the previous version to the new version
+        remoteStoredText = items[LEGACY_STORAGE_KEY];
+        storageObject[STORAGE_KEY] = remoteStoredText;
+        storage.sync.set(storageObject).catch((e: unknown) => {
+          console.warn(e);
+        });
+        // Remove the legacy key
+        storage.sync.remove(LEGACY_STORAGE_KEY).catch((e: unknown) => {
+          console.warn(e);
+        });
+      } else if (items[STORAGE_KEY] != null) {
+        remoteStoredText = items[STORAGE_KEY];
+      }
+      // Value defaults to an empty string if there is no stored value
+      textAreaEl.value = remoteStoredText;
+    },
+  );
 
   const throttledStorageUpdate = throttle(() => {
     storageObject[STORAGE_KEY] = textAreaEl.value;
     storage.sync
       .set(storageObject)
       .then(updateUsage)
-      .catch((e) => console.warn(e));
+      .catch((e: unknown) => {
+        console.warn(e);
+      });
   }, CHANGE_DELAY);
 
   // update storage which in turn updates usage

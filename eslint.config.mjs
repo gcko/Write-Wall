@@ -8,21 +8,38 @@ export default tseslint.config(
     languageOptions: {
       globals: {
         ...globals.browser,
-        ...globals.es2025,
+        ...globals.jest,
         ...globals.node,
+        ...globals.es2024,
       },
       ecmaVersion: 'latest',
       sourceType: 'script',
-    },
-    rules: {
-      'array-bracket-spacing': [
-        'error',
-        'always',
-        {
-          singleValue: true,
+      parserOptions: {
+        ecmaFeatures: {
+          impliedStrict: true,
         },
-      ],
-
+        project: ['./tsconfig.json'],
+      },
+    },
+  },
+  eslint.configs.recommended,
+  ...tseslint.configs.strictTypeChecked,
+  ...tseslint.configs.stylisticTypeChecked,
+  eslintPluginPrettierRecommended,
+  {
+    ignores: [
+      '.github/*',
+      '.husky/*',
+      '.idea/*',
+      'dist/*',
+      'node_modules/*',
+      '*.cjs',
+      'eslint.config.mjs',
+      'webpack/*',
+    ],
+  },
+  {
+    rules: {
       'consistent-return': ['off'],
 
       'no-param-reassign': [
@@ -35,26 +52,23 @@ export default tseslint.config(
       'no-console': [
         'warn',
         {
-          allow: ['warn', 'error'],
+          allow: ['info', 'warn', 'error'],
         },
       ],
 
       'prettier/prettier': [
         'error',
         {
-          trailingComma: 'es5',
-          tabWidth: 2,
           semi: true,
+          endOfLine: 'auto',
+          tabWidth: 2,
+          printWidth: 100,
           singleQuote: true,
+          trailingComma: 'all',
+          bracketSameLine: true,
+          usePrettierrc: false,
         },
       ],
     },
   },
-  eslint.configs.recommended,
-  ...tseslint.configs.strict,
-  ...tseslint.configs.stylistic,
-  eslintPluginPrettierRecommended,
-  {
-    ignores: ['dist/*', 'node_modules/*', 'husky/*', 'github/*'],
-  }
 );
