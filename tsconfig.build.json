@@ -1,8 +1,6 @@
 {
   "extends": "./tsconfig.json",
-  "include": [
-    "src/**/*"
-  ],
+  "include": ["src/**/*"],
   "exclude": [
     "webpack/**/*",
     "dist/**/*",
@@ -10,6 +8,6 @@
     ".husky/**/*",
     "build.cjs",
     "src/**/*.spec.ts",
-    "jest.config.json"
+    "vitest.config.ts"
   ]
 }
