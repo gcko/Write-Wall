@@ -19,6 +19,19 @@ jobs:
         with:
           node-version: "24"
 
+      - name: Verify versions in repo
+        run: node scripts/verify-version.cjs
+
+      - name: Verify tag matches version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          MANIFEST_VERSION=$(node -p "require('./public/manifest.json').version")
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ] || [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) does not match package.json ($PACKAGE_VERSION) or public/manifest.json ($MANIFEST_VERSION)."
+            exit 1
+          fi
+
       - uses: pnpm/action-setup@v4
         with:
           run_install: false
