@@ -91,7 +91,7 @@ Tag pushes trigger the publish workflow, which builds the extension and uploads
 ## License
 
 This project is licensed under the Creative Commons Attribution-ShareAlike 4.0
-International Public License. See `COPYING`.
+International Public License. See `LICENSE`.
 
 ## Changelog
 
