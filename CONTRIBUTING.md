@@ -15,7 +15,7 @@ By participating, you agree to follow the community guidelines in
 ### Prerequisites
 
 - Node.js 22 or 24 (use `nave`, see `.naverc`)
-- pnpm (use corepack; do not use `nvm`)
+- pnpm (use corepack, do not install via `npm`)
 
 ### Install dependencies
 
