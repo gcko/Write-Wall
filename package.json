@@ -1,6 +1,6 @@
 {
   "name": "write-wall",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "A simple, sync-able text pad similar to Write Space",
   "license": "CC-BY-SA-4.0",
   "private": true,
@@ -12,6 +12,7 @@
     "develop": "webpack --config webpack/webpack.config.cjs --watch",
     "build": "webpack --config webpack/webpack.config.cjs && node build.cjs",
     "type:check": "tsc --noEmit",
+    "verify-version": "node scripts/verify-version.cjs",
     "prepare": "husky",
     "check-updates": "pnpm ncu -i"
   },
