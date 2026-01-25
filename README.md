@@ -13,7 +13,7 @@ signing in to Chrome.
 
 ## Features
 
-- Syncs text across Chrome profiles using `chrome.storage.sync`
+- Syncs text across devices signed in to the same Chrome account using  `chrome.storage.sync`
 - Shows bytes used to help stay within sync quota limits
 - Migrates legacy storage key (`text`) to the current key (`v2`)
 - Runs entirely in-browser, no external services
