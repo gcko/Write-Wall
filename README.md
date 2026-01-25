@@ -51,7 +51,7 @@ signing in to Chrome.
 ### Requirements
 
 - Node.js 22 or 24 (`nave` is recommended; see `.naverc`)
-- pnpm (use corepack, do not use `nvm`)
+- pnpm (use corepack, do not install via `npm`)
 
 ### Common Scripts
 
