@@ -6,5 +6,6 @@
 #         444 Castro Street, Suite 900,
 #         Mountain View, California, 94041, USA.
 #
-npm run lint
-npm run test
+pnpm verify-version
+pnpm lint
+pnpm test
