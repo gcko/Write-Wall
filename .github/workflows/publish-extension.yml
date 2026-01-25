@@ -8,6 +8,8 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,6 +41,9 @@ jobs:
 
       - name: Build extension
         run: pnpm build
+
+      - name: Verify package archive
+        run: test -f app.zip
 
       - name: Upload & publish
         uses: mnao305/chrome-extension-upload@v5.0.0
