@@ -72,6 +72,7 @@ const setupMainTest = (
     }),
   };
   const numCharsEl = { innerText: '' };
+  const usageMaxEl = { hidden: false, innerText: '' };
   const lastSyncedEl = { innerText: 'Synced: --' };
 
   const getBytesInUse = vi.fn((_: unknown, callback: (inUse: number) => void) => {
@@ -126,6 +127,9 @@ const setupMainTest = (
       if (id === 'num-chars') {
         return includeNumChars ? numCharsEl : null;
       }
+      if (id === 'usage-max') {
+        return usageMaxEl;
+      }
       if (id === 'last-synced') {
         return lastSyncedEl;
       }
@@ -162,6 +166,7 @@ const setupMainTest = (
     numCharsEl,
     sync,
     textAreaEl,
+    usageMaxEl,
   };
 };
 
@@ -507,6 +512,36 @@ describe('main UI bootstrap', () => {
     handler?.();
 
     expect(numCharsEl.innerText).toBe('5');
+  });
+
+  it('updates the usage label when switching modes', async () => {
+    vi.resetModules();
+    const { chrome, document, countModeEl, getCountModeHandler, usageMaxEl } = setupMainTest({
+      v2: 'hello',
+    });
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+
+    await import('./main.js');
+
+    countModeEl.value = 'chars';
+    const handler = getCountModeHandler('change');
+    handler?.();
+
+    expect(usageMaxEl.hidden).toBe(false);
+    expect(usageMaxEl.innerText).toBe('Char(s)');
+
+    countModeEl.value = 'bytes';
+    handler?.();
+
+    expect(usageMaxEl.hidden).toBe(false);
+    expect(usageMaxEl.innerText).toBe('/ 8192 Bytes');
+
+    countModeEl.value = 'words';
+    handler?.();
+
+    expect(usageMaxEl.hidden).toBe(false);
+    expect(usageMaxEl.innerText).toBe('Word(s)');
   });
 
   it('updates the counter to words when selected', async () => {

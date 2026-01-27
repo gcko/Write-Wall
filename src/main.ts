@@ -33,18 +33,31 @@ const CURSOR_KEY = 'cursor';
     if (!numCharEl) {
       return;
     }
+    const usageMaxEl = document.getElementById('usage-max') as HTMLElement | null;
 
     const mode = countModeEl?.value ?? 'bytes';
     if (mode === 'chars') {
       numCharEl.innerText = String(textAreaEl.value.length);
+      if (usageMaxEl) {
+        usageMaxEl.hidden = false;
+        usageMaxEl.innerText = 'Char(s)';
+      }
       return;
     }
     if (mode === 'words') {
       const trimmed = textAreaEl.value.trim();
       numCharEl.innerText = trimmed.length === 0 ? '0' : String(trimmed.split(/\s+/).length);
+      if (usageMaxEl) {
+        usageMaxEl.hidden = false;
+        usageMaxEl.innerText = 'Word(s)';
+      }
       return;
     }
 
+    if (usageMaxEl) {
+      usageMaxEl.hidden = false;
+      usageMaxEl.innerText = '/ 8192 Bytes';
+    }
     storage.sync.getBytesInUse(null, (inUse) => (numCharEl.innerText = String(inUse)));
   };
 

@@ -17,12 +17,24 @@
   margin: 0;
 }
 
+:root {
+  --bg-top: #0b1116;
+  --bg-bottom: #05080a;
+  --text-main: #c9d4dc;
+  --text-muted: #8fa1ad;
+  --accent: #2d8ba6;
+  --border: #3a4650;
+  --hover-bg: #1a232b;
+  --hover-text: #e7f0f5;
+}
+
+html,
 body {
   position: absolute;
   height: 100%;
   width: 100%;
   overflow: hidden;
-  background-color: #060c0c;
+  background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
@@ -34,7 +46,7 @@ textarea {
   margin: 0 auto;
   padding: 2rem 1rem 0;
   background-color: transparent;
-  color: #b4b4b4;
+  color: var(--text-main);
   border: none;
   outline: medium none;
   resize: none;
@@ -44,9 +56,10 @@ textarea {
 }
 
 #info {
-  color: #b4b4b4;
+  color: var(--text-muted);
   text-align: right;
-  margin-right: 1rem;
+  margin-right: 0.5rem;
+  margin-top: 0.5rem;
   display: flex;
   gap: 0.5rem;
   justify-content: flex-end;
@@ -57,12 +70,16 @@ textarea::-webkit-scrollbar {
   display: none;
 }
 
+textarea::placeholder {
+  color: var(--text-muted);
+}
+
 #clear,
 #copy,
 #export {
   background: transparent;
-  border: 1px solid #b4b4b4;
-  color: #b4b4b4;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
   font-family: monospace;
   font-size: 12px;
   padding: 0.2rem 0.5rem;
@@ -71,8 +88,8 @@ textarea::-webkit-scrollbar {
 
 #count-mode {
   background: transparent;
-  border: 1px solid #b4b4b4;
-  color: #b4b4b4;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
   font-family: monospace;
   font-size: 12px;
   padding: 0.2rem 0.3rem;
@@ -85,8 +102,9 @@ textarea::-webkit-scrollbar {
 #clear:hover,
 #copy:hover,
 #export:hover {
-  background: #b4b4b4;
-  color: #060c0c;
+  background: var(--hover-bg);
+  color: var(--hover-text);
+  border-color: var(--accent);
 }
 
 @media (min-width: 1024px) {
