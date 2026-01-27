@@ -47,14 +47,50 @@ textarea {
   color: #b4b4b4;
   text-align: right;
   margin-right: 1rem;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  align-items: center;
 }
 
 textarea::-webkit-scrollbar {
   display: none;
 }
 
+#clear,
+#copy,
+#export {
+  background: transparent;
+  border: 1px solid #b4b4b4;
+  color: #b4b4b4;
+  font-family: monospace;
+  font-size: 12px;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+}
+
+#count-mode {
+  background: transparent;
+  border: 1px solid #b4b4b4;
+  color: #b4b4b4;
+  font-family: monospace;
+  font-size: 12px;
+  padding: 0.2rem 0.3rem;
+}
+
+#last-synced {
+  font-size: 12px;
+}
+
+#clear:hover,
+#copy:hover,
+#export:hover {
+  background: #b4b4b4;
+  color: #060c0c;
+}
+
 @media (min-width: 1024px) {
   textarea {
-    width: 50%;
+    max-width: 900px;
   }
 }

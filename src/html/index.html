@@ -19,9 +19,20 @@
     />
   </head>
   <body>
-    <div id="info"><span id="num-chars">0</span> / 8192 Bytes</div>
+    <div id="info">
+      <span id="num-chars">0</span> / 8192 Bytes
+      <span id="last-synced">Synced: --</span>
+      <select id="count-mode" aria-label="Count mode">
+        <option value="bytes">Bytes</option>
+        <option value="chars">Chars</option>
+        <option value="words">Words</option>
+      </select>
+      <button id="export" type="button">Export</button>
+      <button id="copy" type="button">Copy</button>
+      <button id="clear" type="button">Clear</button>
+    </div>
     <!--suppress HtmlFormInputWithoutLabel -->
-    <textarea id="text"></textarea>
+    <textarea id="text" placeholder="Type here... auto-syncs across Chrome."></textarea>
 
     <!--suppress HtmlUnknownTarget -->
     <script src="/main.bundle.js"></script>
