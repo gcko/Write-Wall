@@ -52,11 +52,16 @@ Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad b
 - All work must be done in branches and merged via pull request.
 - Do not commit directly to long-lived branches (e.g., main).
 
-## Commit Signoff (DCO)
+## Commit Workflow
+- Create a feature branch for each change.
+- Commits can happen one after another as needed.
+- Commit with `git commit --signoff` (DIRECTIVE: every commit must include `--signoff`).
+
+### Commit Signoff (DCO)
 - Every commit must include a DCO signoff.
 - Use `git commit -s` (or an equivalent workflow) to add `Signed-off-by`.
 
-## Commit Message Standards (Conventional Commits)
+### Commit Message Standards (Conventional Commits)
 - All commit messages must follow the Conventional Commits 1.0.0 specification:
   https://www.conventionalcommits.org/en/v1.0.0/#specification
 - Maintain these standards for all future commits.
@@ -66,3 +71,8 @@ Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad b
   - `!` indicates a breaking change.
   - `subject` is a short, imperative description.
 - If a commit introduces a breaking change, include a `BREAKING CHANGE:` footer.
+
+## Pull Request Workflow
+- Only create a pull request if and only if a user specifically requests a pull request to be made.
+- When a PR is requested to be made, the PR summary must follow `.github/PULL_REQUEST_TEMPLATE.md`.
+- Merge only after review and required checks pass.
