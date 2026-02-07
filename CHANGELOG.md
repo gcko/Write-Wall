@@ -5,7 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
-## [Unreleased]
+## [2.6.0] - 2026-02-07
+
+### Added
+
+- Light and dark mode support with system preference detection (`prefers-color-scheme`)
+- Theme toggle button in the top-right info bar
+- Theme preference persistence via `chrome.storage.local`
+- Warm sepia/paper palette for light mode to reduce eye strain
+- `color-scheme: light dark` on count mode select for native widget rendering
+- AGENTS.md directive requiring PRs always target the `main` branch
 
 ### Changed
 
@@ -13,6 +22,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Move static assets (`css/`, `html/`, `images/`) from `src/` to `public/`
 - Output ESM bundles instead of IIFE (required for Vite multi-entry builds)
 - Add `"type": "module"` to manifest background service worker
+- Bump version to 2.6.0
 
 ### Removed
 
