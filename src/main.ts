@@ -12,6 +12,7 @@ import { throttle } from './utils.js';
 const HOUR_IN_SECONDS = 60 * 60;
 const FOUR_SECONDS_IN_MIL = 4000;
 const CURSOR_KEY = 'cursor';
+const THEME_KEY = 'theme';
 
 /* global chrome:readonly */
 ((chrome) => {
@@ -22,11 +23,31 @@ const CURSOR_KEY = 'cursor';
     textAreaEl = document.getElementById('text') as HTMLTextAreaElement,
     copyButtonEl = document.getElementById('copy'),
     clearButtonEl = document.getElementById('clear'),
+    themeToggleEl = document.getElementById('theme-toggle'),
     exportButtonEl = document.getElementById('export'),
     countModeEl = document.getElementById('count-mode') as HTMLSelectElement | null,
     storage = chrome.storage,
     storageObject: Record<string, string> = {};
   let remoteStoredText = '';
+
+  type Theme = 'light' | 'dark';
+
+  const getSystemTheme = (): Theme =>
+    globalThis.matchMedia?.('(prefers-color-scheme: light)')?.matches ? 'light' : 'dark';
+
+  const applyTheme = (theme: Theme) => {
+    document.documentElement.setAttribute('data-theme', theme);
+    if (themeToggleEl) {
+      themeToggleEl.textContent = theme === 'dark' ? 'Light' : 'Dark';
+    }
+  };
+
+  const removeExplicitTheme = () => {
+    document.documentElement.removeAttribute('data-theme');
+    if (themeToggleEl) {
+      themeToggleEl.textContent = getSystemTheme() === 'dark' ? 'Light' : 'Dark';
+    }
+  };
 
   const updateUsage = () => {
     const numCharEl = document.getElementById('num-chars');
@@ -75,6 +96,18 @@ const CURSOR_KEY = 'cursor';
 
   // Set the number of bytes in use
   updateUsage();
+
+  // Load theme preference
+  if (storage.local) {
+    storage.local.get(THEME_KEY, (localItems: Record<string, unknown>) => {
+      const stored = localItems[THEME_KEY] as string | undefined;
+      if (stored === 'light' || stored === 'dark') {
+        applyTheme(stored);
+      } else {
+        removeExplicitTheme();
+      }
+    });
+  }
 
   // get or create key to store data
   storage.sync.get(
@@ -232,4 +265,22 @@ const CURSOR_KEY = 'cursor';
       throttledStorageUpdate();
     });
   }
+
+  if (themeToggleEl) {
+    themeToggleEl.addEventListener('click', () => {
+      const current =
+        (document.documentElement.getAttribute('data-theme') as Theme | null) ?? getSystemTheme();
+      const next: Theme = current === 'dark' ? 'light' : 'dark';
+      applyTheme(next);
+      storage.local?.set({ [THEME_KEY]: next }).catch((e: unknown) => {
+        console.warn(e);
+      });
+    });
+  }
+
+  globalThis.matchMedia?.('(prefers-color-scheme: dark)')?.addEventListener('change', () => {
+    if (!document.documentElement.getAttribute('data-theme')) {
+      removeExplicitTheme();
+    }
+  });
 })(chrome);

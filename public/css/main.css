@@ -28,6 +28,41 @@
   --hover-text: #e7f0f5;
 }
 
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --bg-top: #f0ebe3;
+    --bg-bottom: #e6e0d6;
+    --text-main: #2c2416;
+    --text-muted: #5c4f3a;
+    --accent: #1a7a94;
+    --border: #a89a85;
+    --hover-bg: #d9d1c4;
+    --hover-text: #1a1408;
+  }
+}
+
+[data-theme="dark"] {
+  --bg-top: #0b1116;
+  --bg-bottom: #05080a;
+  --text-main: #c9d4dc;
+  --text-muted: #8fa1ad;
+  --accent: #2d8ba6;
+  --border: #3a4650;
+  --hover-bg: #1a232b;
+  --hover-text: #e7f0f5;
+}
+
+[data-theme="light"] {
+  --bg-top: #f0ebe3;
+  --bg-bottom: #e6e0d6;
+  --text-main: #2c2416;
+  --text-muted: #5c4f3a;
+  --accent: #1a7a94;
+  --border: #a89a85;
+  --hover-bg: #d9d1c4;
+  --hover-text: #1a1408;
+}
+
 html,
 body {
   position: absolute;
@@ -76,7 +111,8 @@ textarea::placeholder {
 
 #clear,
 #copy,
-#export {
+#export,
+#theme-toggle {
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text-muted);
@@ -86,6 +122,11 @@ textarea::placeholder {
   cursor: pointer;
 }
 
+#theme-toggle {
+  min-width: calc(5ch + 1rem + 2px);
+  text-align: center;
+}
+
 #count-mode {
   background: transparent;
   border: 1px solid var(--border);
@@ -93,6 +134,7 @@ textarea::placeholder {
   font-family: monospace;
   font-size: 12px;
   padding: 0.2rem 0.3rem;
+  color-scheme: light dark;
 }
 
 #last-synced {
@@ -101,7 +143,8 @@ textarea::placeholder {
 
 #clear:hover,
 #copy:hover,
-#export:hover {
+#export:hover,
+#theme-toggle:hover {
   background: var(--hover-bg);
   color: var(--hover-text);
   border-color: var(--accent);

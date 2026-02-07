@@ -71,6 +71,13 @@ const setupMainTest = (
       clearHandlers.set(event, handler);
     }),
   };
+  const themeToggleHandlers = new Map<string, () => void>();
+  const themeToggleEl = {
+    textContent: 'Light',
+    addEventListener: vi.fn((event: string, handler: () => void) => {
+      themeToggleHandlers.set(event, handler);
+    }),
+  };
   const numCharsEl = { innerText: '' };
   const usageMaxEl = { hidden: false, innerText: '' };
   const lastSyncedEl = { innerText: 'Synced: --' };
@@ -121,6 +128,9 @@ const setupMainTest = (
       if (id === 'count-mode') {
         return countModeEl;
       }
+      if (id === 'theme-toggle') {
+        return themeToggleEl;
+      }
       if (id === 'clear') {
         return includeClearButton ? clearButtonEl : null;
       }
@@ -135,6 +145,22 @@ const setupMainTest = (
       }
       return null;
     }),
+    documentElement: {
+      _dataTheme: null as string | null,
+      setAttribute: vi.fn(function (
+        this: { _dataTheme: string | null },
+        _attr: string,
+        value: string,
+      ) {
+        this._dataTheme = value;
+      }),
+      getAttribute: vi.fn(function (this: { _dataTheme: string | null }) {
+        return this._dataTheme;
+      }),
+      removeAttribute: vi.fn(function (this: { _dataTheme: string | null }) {
+        this._dataTheme = null;
+      }),
+    },
     createElement: vi.fn(() => ({
       href: '',
       download: '',
@@ -148,6 +174,7 @@ const setupMainTest = (
     getCopyHandler: (event: string) => copyHandlers.get(event) ?? null,
     getExportHandler: (event: string) => exportHandlers.get(event) ?? null,
     getClearHandler: (event: string) => clearHandlers.get(event) ?? null,
+    getThemeToggleHandler: (event: string) => themeToggleHandlers.get(event) ?? null,
     getHandler: (event: string) => {
       const list = handlers.get(event);
       if (!list) {
@@ -163,6 +190,7 @@ const setupMainTest = (
     countModeEl,
     local,
     lastSyncedEl,
+    themeToggleEl,
     numCharsEl,
     sync,
     textAreaEl,
@@ -1012,7 +1040,7 @@ describe('main UI bootstrap', () => {
     const { chrome, document } = setupMainTest({}, { includeClearButton: false });
     const originalGetElementById = document.getElementById;
     document.getElementById = vi.fn((id: string) => {
-      if (id === 'copy' || id === 'export' || id === 'count-mode') {
+      if (id === 'copy' || id === 'export' || id === 'count-mode' || id === 'theme-toggle') {
         return null;
       }
       return originalGetElementById(id);
@@ -1021,5 +1049,251 @@ describe('main UI bootstrap', () => {
     vi.stubGlobal('document', document);
 
     await import('./main.js');
+  });
+
+  it('applies stored dark theme on load', async () => {
+    vi.resetModules();
+    const { chrome, document } = setupMainTest(
+      {},
+      {
+        localOverrides: {
+          get: vi.fn((_: unknown, callback: (items: Record<string, unknown>) => void) => {
+            callback({ theme: 'dark' });
+          }),
+        },
+      },
+    );
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
+    );
+
+    await import('./main.js');
+
+    expect(document.documentElement.setAttribute).toHaveBeenCalledWith('data-theme', 'dark');
+  });
+
+  it('applies stored light theme on load', async () => {
+    vi.resetModules();
+    const { chrome, document, themeToggleEl } = setupMainTest(
+      {},
+      {
+        localOverrides: {
+          get: vi.fn((_: unknown, callback: (items: Record<string, unknown>) => void) => {
+            callback({ theme: 'light' });
+          }),
+        },
+      },
+    );
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
+    );
+
+    await import('./main.js');
+
+    expect(document.documentElement.setAttribute).toHaveBeenCalledWith('data-theme', 'light');
+    expect(themeToggleEl.textContent).toBe('Dark');
+  });
+
+  it('uses system preference when no theme stored', async () => {
+    vi.resetModules();
+    const { chrome, document } = setupMainTest({});
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
+    );
+
+    await import('./main.js');
+
+    expect(document.documentElement.removeAttribute).toHaveBeenCalledWith('data-theme');
+  });
+
+  it('toggles from dark to light on click', async () => {
+    vi.resetModules();
+    const { chrome, document, themeToggleEl, local, getThemeToggleHandler } = setupMainTest(
+      {},
+      {
+        localOverrides: {
+          get: vi.fn((_: unknown, callback: (items: Record<string, unknown>) => void) => {
+            callback({ theme: 'dark' });
+          }),
+        },
+      },
+    );
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
+    );
+
+    await import('./main.js');
+
+    const handler = getThemeToggleHandler('click');
+    handler?.();
+
+    expect(document.documentElement.setAttribute).toHaveBeenCalledWith('data-theme', 'light');
+    expect(themeToggleEl.textContent).toBe('Dark');
+    expect(local.set).toHaveBeenCalledWith({ theme: 'light' });
+  });
+
+  it('toggles from light to dark on click', async () => {
+    vi.resetModules();
+    const { chrome, document, themeToggleEl, local, getThemeToggleHandler } = setupMainTest(
+      {},
+      {
+        localOverrides: {
+          get: vi.fn((_: unknown, callback: (items: Record<string, unknown>) => void) => {
+            callback({ theme: 'light' });
+          }),
+        },
+      },
+    );
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
+    );
+
+    await import('./main.js');
+
+    const handler = getThemeToggleHandler('click');
+    handler?.();
+
+    expect(document.documentElement.setAttribute).toHaveBeenCalledWith('data-theme', 'dark');
+    expect(themeToggleEl.textContent).toBe('Light');
+    expect(local.set).toHaveBeenCalledWith({ theme: 'dark' });
+  });
+
+  it('logs warning when theme storage fails', async () => {
+    vi.resetModules();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {
+      // noop for test
+    });
+    const error = new Error('theme save failed');
+    const { chrome, document, getThemeToggleHandler } = setupMainTest(
+      {},
+      {
+        localOverrides: {
+          get: vi.fn((_: unknown, callback: (items: Record<string, unknown>) => void) => {
+            callback({ theme: 'dark' });
+          }),
+          set: vi.fn(() => Promise.reject(error)),
+        },
+      },
+    );
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
+    );
+
+    await import('./main.js');
+
+    const handler = getThemeToggleHandler('click');
+    handler?.();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(warnSpy).toHaveBeenCalledWith(error);
+  });
+
+  it('updates button text based on system preference when no theme stored', async () => {
+    vi.resetModules();
+    const { chrome, document, themeToggleEl } = setupMainTest({});
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query === '(prefers-color-scheme: light)',
+        addEventListener: vi.fn(),
+      })),
+    );
+
+    await import('./main.js');
+
+    expect(themeToggleEl.textContent).toBe('Dark');
+  });
+
+  it('responds to system preference change when no explicit theme set', async () => {
+    vi.resetModules();
+    let mediaChangeHandler: (() => void) | undefined;
+    const { chrome, document, themeToggleEl } = setupMainTest({});
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query === '(prefers-color-scheme: light)',
+        addEventListener: vi.fn((_event: string, handler: () => void) => {
+          if (query === '(prefers-color-scheme: dark)') {
+            mediaChangeHandler = handler;
+          }
+        }),
+      })),
+    );
+
+    await import('./main.js');
+
+    // System says light, so button should say "Dark"
+    expect(themeToggleEl.textContent).toBe('Dark');
+
+    // Simulate system switching to dark
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
+    );
+    mediaChangeHandler?.();
+
+    expect(themeToggleEl.textContent).toBe('Light');
+  });
+
+  it('ignores system preference change when explicit theme is set', async () => {
+    vi.resetModules();
+    let mediaChangeHandler: (() => void) | undefined;
+    const { chrome, document, themeToggleEl } = setupMainTest(
+      {},
+      {
+        localOverrides: {
+          get: vi.fn((_: unknown, callback: (items: Record<string, unknown>) => void) => {
+            callback({ theme: 'light' });
+          }),
+        },
+      },
+    );
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: false,
+        addEventListener: vi.fn((_event: string, handler: () => void) => {
+          if (query === '(prefers-color-scheme: dark)') {
+            mediaChangeHandler = handler;
+          }
+        }),
+      })),
+    );
+
+    await import('./main.js');
+
+    expect(themeToggleEl.textContent).toBe('Dark');
+
+    // Simulate system preference change — should be ignored since explicit theme is set
+    mediaChangeHandler?.();
+
+    // Theme should still be light (button still says "Dark")
+    expect(document.documentElement.getAttribute()).toBe('light');
   });
 });
