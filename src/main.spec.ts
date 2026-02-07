@@ -672,4 +672,354 @@ describe('main UI bootstrap', () => {
     const html = readFileSync(new URL('../public/html/index.html', import.meta.url), 'utf8');
     expect(html).toContain('placeholder="Type here... auto-syncs across Chrome."');
   });
+
+  it('shows 0 words when text is empty', async () => {
+    vi.resetModules();
+    const { chrome, document, textAreaEl, numCharsEl, countModeEl, getCountModeHandler } =
+      setupMainTest({});
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+
+    await import('./main.js');
+
+    textAreaEl.value = '';
+    countModeEl.value = 'words';
+    const handler = getCountModeHandler('change');
+    handler?.();
+
+    expect(numCharsEl.innerText).toBe('0');
+  });
+
+  it('silently returns from updateLastSynced when last-synced element is missing', async () => {
+    vi.resetModules();
+    const { chrome, document, textAreaEl, getHandler } = setupMainTest({});
+    const originalGetElementById = document.getElementById;
+    document.getElementById = vi.fn((id: string) => {
+      if (id === 'last-synced') {
+        return null;
+      }
+      return originalGetElementById(id);
+    });
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+
+    await import('./main.js');
+
+    textAreaEl.value = 'updated';
+    const handler = getHandler('keyup');
+
+    expect(() => handler?.()).not.toThrow();
+
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  it('focuses textarea when storage.local is falsy', async () => {
+    vi.resetModules();
+    const { chrome, document, textAreaEl } = setupMainTest({ v2: 'hello' });
+    chrome.storage.local = undefined as unknown as ChromeLocal;
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+
+    await import('./main.js');
+
+    expect(textAreaEl.focus).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs warning when cursor storage fails', async () => {
+    vi.resetModules();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {
+      // noop for test
+    });
+    const error = new Error('local fail');
+    const { chrome, document, getHandler } = setupMainTest(
+      { v2: 'hello' },
+      {
+        localOverrides: {
+          set: vi.fn(() => Promise.reject(error)),
+        },
+      },
+    );
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+
+    await import('./main.js');
+
+    const handler = getHandler('input');
+    handler?.();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(warnSpy).toHaveBeenCalledWith(error);
+  });
+
+  it('logs warning when immediate save (Ctrl+S) fails', async () => {
+    vi.resetModules();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {
+      // noop for test
+    });
+    const error = new Error('sync fail');
+    const { chrome, document, textAreaEl, getHandler } = setupMainTest(
+      {},
+      {
+        syncOverrides: {
+          set: vi.fn(() => Promise.reject(error)),
+        },
+      },
+    );
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+
+    await import('./main.js');
+
+    textAreaEl.value = 'updated';
+    const preventDefault = vi.fn();
+    const handler = getHandler('keydown');
+    handler?.({ key: 's', ctrlKey: true, metaKey: false, shiftKey: false, preventDefault });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(warnSpy).toHaveBeenCalledWith(error);
+  });
+
+  it('logs warning when clipboard.writeText throws synchronously', async () => {
+    vi.resetModules();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {
+      // noop for test
+    });
+    const error = new Error('clipboard fail');
+    const writeText = vi.fn(() => {
+      throw error;
+    });
+    const { chrome, document, textAreaEl, getCopyHandler } = setupMainTest({ v2: 'hello' });
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+
+    await import('./main.js');
+
+    textAreaEl.value = 'copied';
+    const handler = getCopyHandler('click');
+    handler?.();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(warnSpy).toHaveBeenCalledWith(error);
+    expect(textAreaEl.select).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs warning when execCommand throws', async () => {
+    vi.resetModules();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {
+      // noop for test
+    });
+    const error = new Error('exec fail');
+    const execCommand = vi.fn(() => {
+      throw error;
+    });
+    const { chrome, document, textAreaEl, getCopyHandler } = setupMainTest({ v2: 'hello' });
+    vi.stubGlobal('navigator', {});
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', {
+      ...document,
+      execCommand,
+    });
+
+    await import('./main.js');
+
+    textAreaEl.value = 'copied';
+    const handler = getCopyHandler('click');
+    handler?.();
+
+    expect(warnSpy).toHaveBeenCalledWith(error);
+  });
+
+  it('defaults to bytes mode when countModeEl is null', async () => {
+    vi.resetModules();
+    const { chrome, document, numCharsEl, sync } = setupMainTest({ v2: 'hello' });
+    const originalGetElementById = document.getElementById;
+    document.getElementById = vi.fn((id: string) => {
+      if (id === 'count-mode') {
+        return null;
+      }
+      return originalGetElementById(id);
+    });
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+
+    await import('./main.js');
+
+    expect(sync.getBytesInUse).toHaveBeenCalled();
+    expect(numCharsEl.innerText).toBe('42');
+  });
+
+  it('skips usageMaxEl update when usage-max element is null', async () => {
+    vi.resetModules();
+    const { chrome, document, numCharsEl, countModeEl, getCountModeHandler } = setupMainTest({
+      v2: 'hello',
+    });
+    const originalGetElementById = document.getElementById;
+    document.getElementById = vi.fn((id: string) => {
+      if (id === 'usage-max') {
+        return null;
+      }
+      return originalGetElementById(id);
+    });
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+
+    await import('./main.js');
+
+    countModeEl.value = 'chars';
+    const handler = getCountModeHandler('change');
+    handler?.();
+
+    expect(numCharsEl.innerText).toBe('5');
+
+    countModeEl.value = 'words';
+    handler?.();
+
+    expect(numCharsEl.innerText).toBe('1');
+
+    countModeEl.value = 'bytes';
+    handler?.();
+  });
+
+  it('restores cursor with missing start and end properties', async () => {
+    vi.resetModules();
+    const { chrome, document, textAreaEl } = setupMainTest(
+      { v2: 'hello' },
+      {
+        localOverrides: {
+          get: vi.fn((_: unknown, callback: (items: Record<string, unknown>) => void) => {
+            callback({
+              cursor: {},
+            });
+          }),
+        },
+      },
+    );
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+
+    await import('./main.js');
+
+    expect(textAreaEl.setSelectionRange).toHaveBeenCalledWith(0, 0);
+  });
+
+  it('skips setSelectionRange when cursor data is not present', async () => {
+    vi.resetModules();
+    const { chrome, document, textAreaEl } = setupMainTest(
+      { v2: 'hello' },
+      {
+        localOverrides: {
+          get: vi.fn((_: unknown, callback: (items: Record<string, unknown>) => void) => {
+            callback({});
+          }),
+        },
+      },
+    );
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+
+    await import('./main.js');
+
+    expect(textAreaEl.setSelectionRange).not.toHaveBeenCalled();
+    expect(textAreaEl.focus).toHaveBeenCalledTimes(1);
+  });
+
+  it('handles null selectionStart and selectionEnd in cursor storage', async () => {
+    vi.resetModules();
+    const { chrome, document, textAreaEl, local, getHandler } = setupMainTest({
+      v2: 'hello',
+    });
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+
+    await import('./main.js');
+
+    textAreaEl.selectionStart = null as unknown as number;
+    textAreaEl.selectionEnd = null as unknown as number;
+    const handler = getHandler('input');
+    handler?.();
+
+    expect(local.set).toHaveBeenCalledWith({
+      cursor: { start: 0, end: 0 },
+    });
+  });
+
+  it('ignores keydown events without modifier keys', async () => {
+    vi.resetModules();
+    const { chrome, document, getHandler } = setupMainTest({});
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+
+    await import('./main.js');
+
+    const preventDefault = vi.fn();
+    const handler = getHandler('keydown');
+    handler?.({ key: 'c', ctrlKey: false, metaKey: false, shiftKey: true, preventDefault });
+    handler?.({ key: 's', ctrlKey: false, metaKey: false, shiftKey: false, preventDefault });
+
+    expect(preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('copies text on metaKey+Shift+C', async () => {
+    vi.resetModules();
+    const { chrome, document, textAreaEl, getHandler } = setupMainTest({
+      v2: 'hello',
+    });
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+
+    await import('./main.js');
+
+    const handler = getHandler('keydown');
+    const preventDefault = vi.fn();
+    textAreaEl.value = 'meta-copy';
+    handler?.({ key: 'c', ctrlKey: false, metaKey: true, shiftKey: true, preventDefault });
+
+    await Promise.resolve();
+
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(writeText).toHaveBeenCalledWith('meta-copy');
+  });
+
+  it('saves on metaKey+S', async () => {
+    vi.resetModules();
+    const { chrome, document, textAreaEl, sync, getHandler } = setupMainTest({});
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+
+    await import('./main.js');
+
+    textAreaEl.value = 'meta-save';
+    const preventDefault = vi.fn();
+    const handler = getHandler('keydown');
+    handler?.({ key: 's', ctrlKey: false, metaKey: true, shiftKey: false, preventDefault });
+
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(sync.set).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips button listeners when elements are null', async () => {
+    vi.resetModules();
+    const { chrome, document } = setupMainTest({}, { includeClearButton: false });
+    const originalGetElementById = document.getElementById;
+    document.getElementById = vi.fn((id: string) => {
+      if (id === 'copy' || id === 'export' || id === 'count-mode') {
+        return null;
+      }
+      return originalGetElementById(id);
+    });
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('document', document);
+
+    await import('./main.js');
+  });
 });
