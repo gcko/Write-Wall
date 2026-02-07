@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [2.5.0] - 2026-01-27
+
+### Added
+
+- Bytes/Chars/Words count mode toggle
+- "Last synced" timestamp indicator
+- OSS documentation: LICENSE, CONTRIBUTING.md, SECURITY.md, PR template
+- .gitignore rule for macOS .DS_Store files
+
+### Changed
+
+- Bump version to 2.5.0
+
+### Fixed
+
+- Label usage by count mode and separate sync status display
+
+## [2.4.0] - 2026-01-25
+
+### Added
+
+- AGENTS.md for AI coding agent instructions
+- GitHub Actions CI workflow (lint, type check, test on Node 22 + 24)
+- Chrome Web Store publish workflow triggered by version tags
+- Version verification script to ensure package.json and manifest.json match
+
+### Changed
+
+- Replace ESLint with Biome for linting and formatting
+- Replace Jest with Vitest for testing
+- Bump packages to latest
+
 ## [2.3.0] - 2025-03-24
 
 ### Changed
