@@ -94,6 +94,7 @@ Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad b
 
 ## Pull Request Workflow
 - Only create a pull request if and only if a user specifically requests a pull request to be made.
+- DIRECTIVE: All pull requests MUST target the `main` branch. Never use `master` as the base branch.
 - When a PR is requested to be made, the PR summary must follow `.github/PULL_REQUEST_TEMPLATE.md`.
 - Merge only after review and required checks pass.
 
