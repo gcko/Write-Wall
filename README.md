@@ -20,7 +20,7 @@ signing in to Chrome.
 
 ## How It Works
 
-- The UI lives in `src/html/index.html` with logic in `src/main.ts`
+- The UI lives in `public/html/index.html` with logic in `src/main.ts`
 - Text is saved to `chrome.storage.sync` under the `v2` key
 - Writes are throttled to respect Chrome sync quotas
 - The byte counter uses `chrome.storage.sync.getBytesInUse`
@@ -55,7 +55,7 @@ signing in to Chrome.
 
 ### Common Scripts
 
-- `pnpm develop`: Webpack build in watch mode
+- `pnpm develop`: Vite build in watch mode
 - `pnpm build`: Production build + `app.zip` packaging
 - `pnpm lint`: Biome checks
 - `pnpm lint:fix`: Biome auto-fix

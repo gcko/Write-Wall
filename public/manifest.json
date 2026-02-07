@@ -20,7 +20,8 @@
     }
   },
   "background": {
-    "service_worker": "service_worker.bundle.js"
+    "service_worker": "service_worker.bundle.js",
+    "type": "module"
   },
   "permissions": ["storage"]
 }

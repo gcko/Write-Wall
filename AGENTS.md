@@ -1,11 +1,11 @@
 # AGENTS
 
 ## Project Overview
-Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad backed by `chrome.storage.sync` so text is shared across the signed-in Chrome account. The UI is a single page (`src/html/index.html`) with a textarea and a byte counter; logic lives in `src/main.ts` and background logic in `src/service_worker.ts`.
+Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad backed by `chrome.storage.sync` so text is shared across the signed-in Chrome account. The UI is a single page (`public/html/index.html`) with a textarea and a byte counter; logic lives in `src/main.ts` and background logic in `src/service_worker.ts`.
 
 ## Tech Stack
 - TypeScript (ES2024 target, strict mode)
-- Webpack + ts-loader (build)
+- Vite (build)
 - Vitest (tests, `*.spec.ts` naming)
 - Biome (lint + format)
 - Husky (pre-commit: lint + test)
@@ -16,10 +16,11 @@ Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad b
 - `src/main.ts`: UI logic, reads/writes synced text, throttles writes to respect sync quotas.
 - `src/service_worker.ts`: MV3 service worker, opens `html/index.html` when the action icon is clicked.
 - `src/utils.ts`: Shared utilities (throttle function).
-- `src/html/index.html`: Extension UI page.
-- `src/css/main.css`: UI styles (dark theme, CSS custom properties).
+- `public/html/index.html`: Extension UI page.
+- `public/css/main.css`: UI styles (dark theme, CSS custom properties).
+- `public/images/`: Extension icons (copied verbatim to `dist/` by Vite).
 - `public/manifest.json`: MV3 manifest (source of truth, copied to `dist/` on build).
-- `webpack/webpack.config.cjs`: Build config, emits bundles to `dist/` and copies static assets.
+- `vite.config.ts`: Build config, emits bundles to `dist/` and copies `public/` assets.
 - `build.cjs`: Packages `dist/` into `app.zip` for release.
 - `dist/`: Build output (generated, do not edit).
 
@@ -30,11 +31,11 @@ Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad b
 | UI behavior / event handlers | `src/main.ts` |
 | Background / tab management | `src/service_worker.ts` |
 | Shared utilities | `src/utils.ts` |
-| Styles | `src/css/main.css` |
-| HTML structure | `src/html/index.html` |
-| Static assets / icons | `src/images/` |
+| Styles | `public/css/main.css` |
+| HTML structure | `public/html/index.html` |
+| Static assets / icons | `public/images/` |
 | Manifest changes | `public/manifest.json` |
-| Build config | `webpack/webpack.config.cjs` |
+| Build config | `vite.config.ts` |
 | New test | `src/<module>.spec.ts` |
 
 ## Development Workflow
@@ -48,8 +49,8 @@ Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad b
 - `pnpm test`: Run Vitest tests.
 - `pnpm lint`: Run Biome checks.
 - `pnpm lint:fix`: Run Biome with auto-fix.
-- `pnpm develop`: Webpack build in watch mode.
-- `pnpm build`: Webpack build + package `dist/` into `app.zip`.
+- `pnpm develop`: Vite build in watch mode.
+- `pnpm build`: Vite build + package `dist/` into `app.zip`.
 - `pnpm type:check`: Run TypeScript type checking.
 - `pnpm prepare`: Install Husky hooks.
 - `pnpm check-updates`: Run npm-check-updates in interactive mode.
@@ -63,7 +64,7 @@ Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad b
 
 ## Common Pitfalls
 - Sync quota is 8,192 bytes total. Test near-limit behavior.
-- Webpack uses `tsconfig.build.json`, not `tsconfig.json`. Build errors may differ from editor errors.
+- Vite uses esbuild for transpilation (not `tsconfig.build.json`). Type checking is separate (`pnpm type:check`).
 - Pre-commit hook runs lint + test. Fix with `pnpm lint:fix` before retrying.
 - Test environment is Node (not browser). Chrome APIs must be mocked in tests.
 

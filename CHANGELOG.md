@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Replace Webpack with Vite for build tooling
+- Move static assets (`css/`, `html/`, `images/`) from `src/` to `public/`
+- Output ESM bundles instead of IIFE (required for Vite multi-entry builds)
+- Add `"type": "module"` to manifest background service worker
+
+### Removed
+
+- Remove `webpack`, `webpack-cli`, `ts-loader`, `copy-webpack-plugin` dependencies
+- Remove `webpack/` directory
+
 ## [2.5.0] - 2026-01-27
 
 ### Added
