@@ -1,6 +1,5 @@
-/* eslint-disable @typescript-eslint/no-require-imports,no-console */
 /*
- * Copyright (c) 2023-2024 Jared M. Scott. This work is licensed under the Creative
+ * Copyright (c) 2023-2026 Jared M. Scott. This work is licensed under the Creative
  * Commons Attribution 3.0 Un-ported License. To view a copy of this license,
  * visit http://creativecommons.org/licenses/by/3.0/ or send a letter to
  *         Creative Commons,
@@ -26,12 +25,12 @@ async function main() {
             return reject(err);
           }
           resolve();
-        }
+        },
       );
     });
   }
 
-  async function createZipArchive() {
+  function createZipArchive() {
     const outputFileName = 'app.zip';
     const zip = new AdmZip();
     zip.addLocalFolder('./dist', undefined, undefined, undefined);

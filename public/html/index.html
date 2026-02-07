@@ -1,0 +1,42 @@
+<!--
+  ~ Copyright (c) 2023-2026 Jared M. Scott. This work is licensed under the Creative
+  ~ Commons Attribution 3.0 Un-ported License. To view a copy of this license,
+  ~ visit http://creativecommons.org/licenses/by/3.0/ or send a letter to
+  ~         Creative Commons,
+  ~         444 Castro Street, Suite 900,
+  ~         Mountain View, California, 94041, USA.
+  -->
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Simple Text Sync</title>
+    <link
+      href="/css/main.css"
+      type="text/css"
+      media="screen"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="info">
+      <span id="num-chars">0</span>
+      <span id="usage-max">/ 8192 Bytes</span>
+      <span aria-hidden="true">&#183;</span>
+      <span id="last-synced">Synced: --</span>
+      <select id="count-mode" aria-label="Count mode">
+        <option value="bytes">Bytes</option>
+        <option value="chars">Chars</option>
+        <option value="words">Words</option>
+      </select>
+      <button id="export" type="button">Export</button>
+      <button id="copy" type="button">Copy</button>
+      <button id="clear" type="button">Clear</button>
+    </div>
+    <!--suppress HtmlFormInputWithoutLabel -->
+    <textarea id="text" placeholder="Type here... auto-syncs across Chrome."></textarea>
+
+    <!--suppress HtmlUnknownTarget -->
+    <script type="module" src="/main.bundle.js"></script>
+  </body>
+</html>

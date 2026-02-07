@@ -1,0 +1,114 @@
+/*
+ * Copyright (c) 2023-2026 Jared M. Scott. This work is licensed under the Creative
+ * Commons Attribution 3.0 Un-ported License. To view a copy of this license,
+ * visit http://creativecommons.org/licenses/by/3.0/ or send a letter to
+ *         Creative Commons,
+ *         444 Castro Street, Suite 900,
+ *         Mountain View, California, 94041, USA.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
+:root {
+  --bg-top: #0b1116;
+  --bg-bottom: #05080a;
+  --text-main: #c9d4dc;
+  --text-muted: #8fa1ad;
+  --accent: #2d8ba6;
+  --border: #3a4650;
+  --hover-bg: #1a232b;
+  --hover-text: #e7f0f5;
+}
+
+html,
+body {
+  position: absolute;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+textarea {
+  display: block;
+  height: 95%;
+  width: 100%;
+  margin: 0 auto;
+  padding: 2rem 1rem 0;
+  background-color: transparent;
+  color: var(--text-main);
+  border: none;
+  outline: medium none;
+  resize: none;
+  font-family: monospace;
+  font-size: 14px;
+  transition: width 0.5s ease-in-out;
+}
+
+#info {
+  color: var(--text-muted);
+  text-align: right;
+  margin-right: 0.5rem;
+  margin-top: 0.5rem;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+textarea::-webkit-scrollbar {
+  display: none;
+}
+
+textarea::placeholder {
+  color: var(--text-muted);
+}
+
+#clear,
+#copy,
+#export {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: monospace;
+  font-size: 12px;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+}
+
+#count-mode {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: monospace;
+  font-size: 12px;
+  padding: 0.2rem 0.3rem;
+}
+
+#last-synced {
+  font-size: 12px;
+}
+
+#clear:hover,
+#copy:hover,
+#export:hover {
+  background: var(--hover-bg);
+  color: var(--hover-text);
+  border-color: var(--accent);
+}
+
+@media (min-width: 1024px) {
+  textarea {
+    max-width: 900px;
+  }
+}

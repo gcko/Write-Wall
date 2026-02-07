@@ -1,45 +1,37 @@
 {
   "name": "write-wall",
-  "version": "2.2.0",
+  "version": "2.5.0",
   "description": "A simple, sync-able text pad similar to Write Space",
   "license": "CC-BY-SA-4.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "jest",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "develop": "webpack --config webpack/webpack.config.cjs --watch",
-    "build": "webpack --config webpack/webpack.config.cjs && node build.cjs",
-    "prepare": "husky"
+    "test": "vitest run",
+    "lint": "biome check --diagnostic-level=error",
+    "lint:fix": "biome check --write --diagnostic-level=error",
+    "develop": "vite build --watch",
+    "build": "vite build && node build.cjs",
+    "type:check": "tsc --noEmit",
+    "verify-version": "node scripts/verify-version.cjs",
+    "prepare": "husky",
+    "check-updates": "pnpm ncu -i"
   },
+  "packageManager": "pnpm@10.28.2+sha512.41872f037ad22f7348e3b1debbaf7e867cfd448f2726d9cf74c08f19507c31d2c8e7a11525b983febc2df640b5438dee6023ebb1f84ed43cc2d654d2bc326264",
   "engineStrict": true,
   "engines": {
-    "node": "^20.0.0 || ^22.0.0"
+    "node": "^22.0.0 || ^24.0.0"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.3",
-    "@eslint/js": "^9.39.2",
-    "@jest/globals": "^30.2.0",
-    "@testing-library/jest-dom": "^6.9.1",
+    "@biomejs/biome": "2.3.14",
     "@testing-library/user-event": "^14.6.1",
     "@types/chrome": "^0.1.36",
-    "@types/eslint__js": "^9.14.0",
     "adm-zip": "^0.5.16",
-    "copy-webpack-plugin": "^13.0.1",
-    "eslint": "^9.39.2",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-jest": "^29.12.1",
-    "eslint-plugin-prettier": "^5.5.5",
-    "globals": "^17.1.0",
+    "corepack": "^0.34.6",
+    "globals": "^17.3.0",
     "husky": "^9.1.7",
-    "jest": "^30.2.0",
-    "prettier": "^3.8.1",
-    "ts-jest": "^29.4.6",
-    "ts-loader": "^9.5.4",
+    "npm-check-updates": "^19.3.2",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.53.1",
-    "webpack": "^5.104.1",
-    "webpack-cli": "^6.0.1"
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18"
   }
 }
