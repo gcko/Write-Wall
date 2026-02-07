@@ -2,12 +2,12 @@
   "extends": "./tsconfig.json",
   "include": ["src/**/*"],
   "exclude": [
-    "webpack/**/*",
     "dist/**/*",
     ".github/**/*",
     ".husky/**/*",
     "build.cjs",
     "src/**/*.spec.ts",
+    "vite.config.ts",
     "vitest.config.ts"
   ]
 }

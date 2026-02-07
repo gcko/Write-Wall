@@ -56,7 +56,7 @@ pnpm verify-version
 
 - Avoid editing `dist/` directly (generated output).
 - `chrome.storage.sync` is quota-limited; preserve write throttling.
-- The UI is `src/html/index.html`; logic is in `src/main.ts`.
+- The UI is `public/html/index.html`; logic is in `src/main.ts`.
 
 ## Communication
 

@@ -4,7 +4,7 @@
 
 ## Architecture Quick Reference
 
-- UI page: `src/html/index.html` with logic in `src/main.ts`
+- UI page: `public/html/index.html` with logic in `src/main.ts`
 - Service worker: `src/service_worker.ts` (tab management only)
 - Shared utilities: `src/utils.ts` (throttle function)
 - Sync storage key: `v2` in `chrome.storage.sync` (8,192 byte limit)
@@ -33,7 +33,7 @@ if (copyButtonEl) {
 
 1. **Tests fail**: Run `pnpm test` locally. Tests mock Chrome APIs; check mock setup in spec files.
 2. **Lint errors**: Run `pnpm lint:fix`. Biome config is in `biome.json`.
-3. **Build issues**: Check `webpack/webpack.config.cjs`. Uses `tsconfig.build.json` (not `tsconfig.json`).
+3. **Build issues**: Check `vite.config.ts`. Vite uses esbuild for transpilation; type checking is separate (`pnpm type:check`).
 4. **Version mismatch**: Both `package.json` and `public/manifest.json` must match. Use `pnpm verify-version`.
 
 ## CI/CD Details

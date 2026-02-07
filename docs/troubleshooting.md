@@ -18,7 +18,7 @@ Do **not** use `nvm` for this project.
 
 ### Build output is stale after changes
 
-Webpack watch mode (`pnpm develop`) rebuilds on file changes, but you must still manually reload the extension in `chrome://extensions`. Click the reload icon on the Write Wall extension card.
+Vite watch mode (`pnpm develop`) rebuilds on file changes, but you must still manually reload the extension in `chrome://extensions`. Click the reload icon on the Write Wall extension card.
 
 ### Tests fail with Chrome API errors
 

@@ -11,33 +11,30 @@
     "test:coverage:summary": "vitest run --coverage --coverage.reporter=text-summary",
     "lint": "biome check --diagnostic-level=error",
     "lint:fix": "biome check --write --diagnostic-level=error",
-    "develop": "webpack --config webpack/webpack.config.cjs --watch",
-    "build": "webpack --config webpack/webpack.config.cjs && node build.cjs",
+    "develop": "vite build --watch",
+    "build": "vite build && node build.cjs",
     "type:check": "tsc --noEmit",
     "verify-version": "node scripts/verify-version.cjs",
     "prepare": "husky",
     "check-updates": "pnpm ncu -i"
   },
-  "packageManager": "pnpm@10.28.1+sha512.7d7dbbca9e99447b7c3bf7a73286afaaf6be99251eb9498baefa7d406892f67b879adb3a1d7e687fc4ccc1a388c7175fbaae567a26ab44d1067b54fcb0d6a316",
+  "packageManager": "pnpm@10.28.2+sha512.41872f037ad22f7348e3b1debbaf7e867cfd448f2726d9cf74c08f19507c31d2c8e7a11525b983febc2df640b5438dee6023ebb1f84ed43cc2d654d2bc326264",
   "engineStrict": true,
   "engines": {
     "node": "^22.0.0 || ^24.0.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.3.12",
+    "@biomejs/biome": "2.3.14",
     "@testing-library/user-event": "^14.6.1",
     "@types/chrome": "^0.1.36",
     "@vitest/coverage-v8": "^4.0.18",
     "adm-zip": "^0.5.16",
-    "copy-webpack-plugin": "^13.0.1",
     "corepack": "^0.34.6",
-    "globals": "^17.1.0",
+    "globals": "^17.3.0",
     "husky": "^9.1.7",
-    "npm-check-updates": "^19.3.1",
-    "ts-loader": "^9.5.4",
+    "npm-check-updates": "^19.3.2",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.18",
-    "webpack": "^5.104.1",
-    "webpack-cli": "^6.0.1"
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18"
   }
 }

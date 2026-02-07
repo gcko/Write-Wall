@@ -6,7 +6,7 @@ Write Wall is a Chrome Extension built on Manifest V3. It provides a synced text
 
 ## Extension Components
 
-### UI Page (`src/html/index.html`)
+### UI Page (`public/html/index.html`)
 
 Single HTML page rendered when the extension action icon is clicked. Contains:
 - `<textarea id="text">` - main editing area
@@ -57,17 +57,17 @@ This yields roughly a 4-second delay between sync writes. The `throttle` utility
 
 ## Build Pipeline
 
-### Webpack (`webpack/webpack.config.cjs`)
+### Vite (`vite.config.ts`)
 
 - **Entry points**: `src/main.ts` and `src/service_worker.ts`
 - **Output**: `dist/` directory with `main.bundle.js` and `service_worker.bundle.js`
-- **Loader**: `ts-loader` using `tsconfig.build.json`
-- **Copy plugin**: copies `public/` (manifest, icons), `src/html/`, `src/css/`, `src/images/` into `dist/`
-- **Mode**: production with inline source maps
+- **Transpilation**: esbuild (built into Vite), targeting ES2024
+- **Static assets**: `public/` directory (manifest, HTML, CSS, icons) copied verbatim to `dist/`
+- **Mode**: production, no source maps
 
 ### Packaging (`build.cjs`)
 
-After webpack, `build.cjs` uses `adm-zip` to create `app.zip` from `dist/` for Chrome Web Store submission.
+After Vite builds, `build.cjs` uses `adm-zip` to create `app.zip` from `dist/` for Chrome Web Store submission.
 
 ## CI/CD
 
@@ -99,13 +99,12 @@ src/
   service_worker.spec.ts - Tests for service worker
   utils.spec.ts        - Tests for throttle utility
   verify-version.spec.ts - Tests for version verification
+public/
+  manifest.json        - MV3 manifest (source of truth)
   html/index.html      - Extension UI page
   css/main.css         - Styles (dark theme, CSS variables)
   images/              - Extension icons (16, 19, 48, 64, 128, 512)
-public/
-  manifest.json        - MV3 manifest (source of truth)
-webpack/
-  webpack.config.cjs   - Build configuration
+vite.config.ts         - Build configuration
 scripts/
   verify-version.cjs   - Checks package.json and manifest.json version parity
 dist/                  - Build output (generated, do not edit)

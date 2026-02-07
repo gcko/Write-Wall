@@ -669,7 +669,7 @@ describe('main UI bootstrap', () => {
   });
 
   it('ships a placeholder hint in the UI', () => {
-    const html = readFileSync(new URL('./html/index.html', import.meta.url), 'utf8');
+    const html = readFileSync(new URL('../public/html/index.html', import.meta.url), 'utf8');
     expect(html).toContain('placeholder="Type here... auto-syncs across Chrome."');
   });
 

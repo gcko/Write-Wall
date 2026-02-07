@@ -17,8 +17,8 @@ pnpm install    # install dependencies
 
 | Script | Command | Description |
 |--------|---------|-------------|
-| Develop | `pnpm develop` | Webpack watch mode, rebuilds on change |
-| Build | `pnpm build` | Production webpack build + `app.zip` |
+| Develop | `pnpm develop` | Vite watch mode, rebuilds on change |
+| Build | `pnpm build` | Production Vite build + `app.zip` |
 | Test | `pnpm test` | Run Vitest test suite |
 | Lint | `pnpm lint` | Biome checks (errors only) |
 | Lint fix | `pnpm lint:fix` | Biome auto-fix |
@@ -29,10 +29,10 @@ pnpm install    # install dependencies
 
 ## Local Development Loop
 
-1. Run `pnpm develop` to start webpack in watch mode
+1. Run `pnpm develop` to start Vite in watch mode
 2. Open `chrome://extensions`, enable Developer mode
 3. Click "Load unpacked" and select the `dist/` directory
-4. Make changes to `src/` files; webpack rebuilds automatically
+4. Make changes to `src/` files; Vite rebuilds automatically
 5. Click the reload button on the extension card in `chrome://extensions`
 
 ## Testing
@@ -55,12 +55,12 @@ Key settings:
 - Indent: 2 spaces, LF line endings
 - Line width: 100
 - Single quotes, trailing commas, semicolons always
-- Excludes: `.github/`, `.husky/`, `.idea/`, `dist/`, `node_modules/`, `*.cjs`, `webpack/`
+- Excludes: `.github/`, `.husky/`, `.idea/`, `dist/`, `node_modules/`, `*.cjs`
 
 ## TypeScript Configuration
 
 - `tsconfig.json`: Base config, strict mode, target ES2024, ESNext modules
-- `tsconfig.build.json`: Used by ts-loader for webpack builds
+- `tsconfig.build.json`: Excludes test and config files from type-checked source
 - `tsconfig.test.json`: Used by Vitest
 
 Type definitions: `@types/chrome` for Chrome extension APIs.
@@ -104,9 +104,9 @@ type(scope)!: subject
 | UI behavior / event handlers | `src/main.ts` |
 | Background / tab management | `src/service_worker.ts` |
 | Shared utilities | `src/utils.ts` |
-| Styles | `src/css/main.css` |
-| HTML structure | `src/html/index.html` |
-| Static assets / icons | `src/images/` |
+| Styles | `public/css/main.css` |
+| HTML structure | `public/html/index.html` |
+| Static assets / icons | `public/images/` |
 | Manifest changes | `public/manifest.json` |
-| Build config | `webpack/webpack.config.cjs` |
+| Build config | `vite.config.ts` |
 | New test | `src/<module>.spec.ts` |
