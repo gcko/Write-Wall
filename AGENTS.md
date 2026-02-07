@@ -3,25 +3,46 @@
 ## Project Overview
 Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad backed by `chrome.storage.sync` so text is shared across the signed-in Chrome account. The UI is a single page (`src/html/index.html`) with a textarea and a byte counter; logic lives in `src/main.ts` and background logic in `src/service_worker.ts`.
 
+## Tech Stack
+- TypeScript (ES2024 target, strict mode)
+- Webpack + ts-loader (build)
+- Vitest (tests, `*.spec.ts` naming)
+- Biome (lint + format)
+- Husky (pre-commit: lint + test)
+- pnpm (package manager, via corepack)
+- Chrome Extension Manifest V3
+
 ## Repository Layout
 - `src/main.ts`: UI logic, reads/writes synced text, throttles writes to respect sync quotas.
 - `src/service_worker.ts`: MV3 service worker, opens `html/index.html` when the action icon is clicked.
+- `src/utils.ts`: Shared utilities (throttle function).
 - `src/html/index.html`: Extension UI page.
-- `src/css/main.css`: UI styles.
-- `public/manifest.json`: MV3 manifest used for build output.
-- `webpack/webpack.config.cjs`: Build config, emits bundles to `dist` and copies static assets.
+- `src/css/main.css`: UI styles (dark theme, CSS custom properties).
+- `public/manifest.json`: MV3 manifest (source of truth, copied to `dist/` on build).
+- `webpack/webpack.config.cjs`: Build config, emits bundles to `dist/` and copies static assets.
 - `build.cjs`: Packages `dist/` into `app.zip` for release.
-- `dist/`: Build output (generated).
+- `dist/`: Build output (generated, do not edit).
+
+## Where to Add Code
+
+| What | Where |
+|------|-------|
+| UI behavior / event handlers | `src/main.ts` |
+| Background / tab management | `src/service_worker.ts` |
+| Shared utilities | `src/utils.ts` |
+| Styles | `src/css/main.css` |
+| HTML structure | `src/html/index.html` |
+| Static assets / icons | `src/images/` |
+| Manifest changes | `public/manifest.json` |
+| Build config | `webpack/webpack.config.cjs` |
+| New test | `src/<module>.spec.ts` |
 
 ## Development Workflow
 - Use `nave` to manage Node versions; `.naverc` defines the version for this repo.
-- Do not use `nvm`.
-- Use `pnpm install` once to install dependencies.
-- For local development:
-  - Run `pnpm develop` to build in watch mode.
-  - Load `dist/` as an unpacked extension via `chrome://extensions`.
-- For production builds:
-  - Run `pnpm build` to generate `dist/` and `app.zip`.
+- Do NOT use `nvm`.
+- Use `pnpm install` once to install dependencies (via corepack, not npm).
+- Local development: `pnpm develop` (watch mode), then load `dist/` as unpacked extension.
+- Production build: `pnpm build` generates `dist/` and `app.zip`.
 
 ## Scripts (package.json)
 - `pnpm test`: Run Vitest tests.
@@ -33,20 +54,18 @@ Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad b
 - `pnpm prepare`: Install Husky hooks.
 - `pnpm check-updates`: Run npm-check-updates in interactive mode.
 
-## Tooling and Packages
-- TypeScript: Source is `.ts`, built via `ts-loader` and `tsconfig.build.json`.
-- Webpack: Bundles `src/main.ts` and `src/service_worker.ts` into `dist/` and copies `public/`, `src/html`, `src/css`, and `src/images`.
-- Vitest: Unit tests run under ESM with `vitest.config.ts` and `tsconfig.test.json`.
-- Biome: Linting is handled via Biome CLI.
-- Husky: Pre-commit hook runs `pnpm lint` and `pnpm test`.
-- adm-zip: Used by `build.cjs` to create `app.zip`.
+## Critical Constraints
+- Do NOT add external backends or cloud services; all persistence uses Chrome Storage APIs.
+- Do NOT add long-lived state in the service worker (MV3 requirement).
+- Always preserve sync write throttling; changes to sync logic must respect `chrome.storage.sync` quotas.
+- Do NOT hand-edit files in `dist/`; it is generated output.
+- Both `package.json` and `public/manifest.json` versions must always match.
 
-## Chrome Extension Gotchas
-- MV3 service worker runs in the background; avoid long-lived state in the service worker.
-- Text sync uses `chrome.storage.sync` and is throttled to respect quota. Any changes to sync logic should preserve write limits.
-- `chrome.storage.sync` quota is small; the UI shows bytes used via `getBytesInUse`.
-- `public/manifest.json` is the source manifest; it is copied into `dist/` during builds.
-- `dist/` is generated output; avoid hand-editing it.
+## Common Pitfalls
+- Sync quota is 8,192 bytes total. Test near-limit behavior.
+- Webpack uses `tsconfig.build.json`, not `tsconfig.json`. Build errors may differ from editor errors.
+- Pre-commit hook runs lint + test. Fix with `pnpm lint:fix` before retrying.
+- Test environment is Node (not browser). Chrome APIs must be mocked in tests.
 
 ## Workflow Policy
 - All work must be done in branches and merged via pull request.
@@ -76,3 +95,8 @@ Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad b
 - Only create a pull request if and only if a user specifically requests a pull request to be made.
 - When a PR is requested to be made, the PR summary must follow `.github/PULL_REQUEST_TEMPLATE.md`.
 - Merge only after review and required checks pass.
+
+## Additional Resources
+
+- **CLAUDE.md** - Claude-specific deep dives, architecture patterns, and debugging playbook
+- **docs/KNOWLEDGE_BASE.md** - Full documentation index

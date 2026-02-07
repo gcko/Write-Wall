@@ -85,14 +85,14 @@ Tag pushes trigger the publish workflow, which builds the extension and uploads
 ## Communication
 
 - Bug reports and feature requests: GitHub Issues
-- Contributions: see `CONTRIBUTING.md`
-- Security reports: see `SECURITY.md`
+- Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md)
+- Security reports: see [SECURITY.md](SECURITY.md)
 
 ## License
 
 This project is licensed under the Creative Commons Attribution-ShareAlike 4.0
-International Public License. See `LICENSE`.
+International Public License. See [LICENSE](LICENSE).
 
 ## Changelog
 
-See `CHANGELOG.md`.
+See [CHANGELOG.md](CHANGELOG.md).
