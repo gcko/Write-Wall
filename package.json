@@ -7,6 +7,8 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:coverage:summary": "vitest run --coverage --coverage.reporter=text-summary",
     "lint": "biome check --diagnostic-level=error",
     "lint:fix": "biome check --write --diagnostic-level=error",
     "develop": "webpack --config webpack/webpack.config.cjs --watch",
@@ -25,6 +27,7 @@
     "@biomejs/biome": "2.3.12",
     "@testing-library/user-event": "^14.6.1",
     "@types/chrome": "^0.1.36",
+    "@vitest/coverage-v8": "^4.0.18",
     "adm-zip": "^0.5.16",
     "copy-webpack-plugin": "^13.0.1",
     "corepack": "^0.34.6",

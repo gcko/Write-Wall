@@ -8,4 +8,4 @@
 #
 pnpm verify-version
 pnpm lint
-pnpm test
+pnpm test:coverage
