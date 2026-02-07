@@ -89,19 +89,22 @@ jobs:
         id: changed
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
-          CHANGED=$(gh pr diff "${{ steps.pr.outputs.number }}" \
+          CHANGED=$(gh pr diff "$PR_NUMBER" \
             --repo "${{ github.repository }}" \
             --name-only 2>/dev/null | paste -sd ',' - || echo "")
           echo "files=$CHANGED" >> $GITHUB_OUTPUT
 
       - name: Generate coverage report
         id: report
+        env:
+          CHANGED_FILES: ${{ steps.changed.outputs.files }}
         run: |
           node scripts/coverage-report.cjs \
             --base base-coverage/coverage-final.json \
             --pr pr-coverage/coverage-final.json \
-            --changed-files "${{ steps.changed.outputs.files }}" \
+            --changed-files "$CHANGED_FILES" \
             --threshold ${{ env.COVERAGE_THRESHOLD }} \
             --base-path "$(pwd)/" \
             --output coverage-report.md
