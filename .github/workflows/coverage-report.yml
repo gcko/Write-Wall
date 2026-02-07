@@ -20,28 +20,33 @@ jobs:
       actions: read
 
     steps:
-      - name: Checkout PR
+      # Checkout the default branch (trusted code), NOT the PR head.
+      # This prevents a malicious PR from modifying scripts/coverage-report.cjs
+      # to exfiltrate secrets via the pull-requests:write permission.
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
+      # Pass workflow_run context as environment variables to avoid
+      # shell injection via attacker-controlled branch names.
       - name: Get PR number
         id: pr
         env:
           GH_TOKEN: ${{ github.token }}
+          HEAD_OWNER: ${{ github.event.workflow_run.head_repository.owner.login }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          FALLBACK_PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
         run: |
           PR_NUMBER=$(gh pr view --repo "${{ github.repository }}" \
-            "${{ github.event.workflow_run.head_repository.owner.login }}:${{ github.event.workflow_run.head_branch }}" \
+            "${HEAD_OWNER}:${HEAD_BRANCH}" \
             --json 'number' --jq '.number' 2>/dev/null || echo "")
 
           if [ -z "$PR_NUMBER" ]; then
-            PR_NUMBER="${{ github.event.workflow_run.pull_requests[0].number }}"
+            PR_NUMBER="$FALLBACK_PR_NUMBER"
             echo "Using fallback PR number from workflow_run"
           fi
 
@@ -78,11 +83,17 @@ jobs:
           [ -f base-coverage/coverage-final.json ] || echo '{}' > base-coverage/coverage-final.json
           [ -f pr-coverage/coverage-final.json ] || echo '{}' > pr-coverage/coverage-final.json
 
+      # Use the GitHub API to get changed files instead of git-based detection.
+      # This avoids checking out the PR head (untrusted code).
       - name: Get changed files
         id: changed
-        uses: tj-actions/changed-files@v47
-        with:
-          separator: ','
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CHANGED=$(gh pr diff "${{ steps.pr.outputs.number }}" \
+            --repo "${{ github.repository }}" \
+            --name-only 2>/dev/null | paste -sd ',' - || echo "")
+          echo "files=$CHANGED" >> $GITHUB_OUTPUT
 
       - name: Generate coverage report
         id: report
@@ -90,7 +101,7 @@ jobs:
           node scripts/coverage-report.cjs \
             --base base-coverage/coverage-final.json \
             --pr pr-coverage/coverage-final.json \
-            --changed-files "${{ steps.changed.outputs.all_changed_files }}" \
+            --changed-files "${{ steps.changed.outputs.files }}" \
             --threshold ${{ env.COVERAGE_THRESHOLD }} \
             --base-path "$(pwd)/" \
             --output coverage-report.md
