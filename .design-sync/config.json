@@ -1,0 +1,10 @@
+{
+  "projectId": "9f1860bb-20c0-4ac1-a56e-2195ed395613",
+  "shape": "package",
+  "pkg": "write-wall",
+  "entry": ".design-sync/entry.mjs",
+  "globalName": "WriteWall",
+  "cssEntry": "public/css/main.css",
+  "guidelinesGlob": [],
+  "readmeHeader": ".design-sync/conventions.md"
+}
