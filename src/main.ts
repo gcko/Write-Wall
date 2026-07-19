@@ -7,12 +7,25 @@
  *         Mountain View, California, 94041, USA.
  */
 
+import { MarkdownEditor } from './editor.js';
+import {
+  applySettings,
+  clampSize,
+  DEFAULT_SETTINGS,
+  normalizeSettings,
+  type PadSettings,
+} from './settings.js';
 import { throttle } from './utils.js';
 
 const HOUR_IN_SECONDS = 60 * 60;
 const FOUR_SECONDS_IN_MIL = 4000;
 const CURSOR_KEY = 'cursor';
 const THEME_KEY = 'theme';
+const SETTINGS_KEY = 'settings';
+const COUNT_MODE_KEY = 'countMode';
+const QUOTA_BYTES = 8192;
+const NEAR_LIMIT_PCT = 90;
+const FLASH_MS = 1600;
 
 /* global chrome:readonly */
 ((chrome) => {
@@ -20,93 +33,278 @@ const THEME_KEY = 'theme';
       (chrome.storage.sync.MAX_WRITE_OPERATIONS_PER_HOUR / HOUR_IN_SECONDS) * FOUR_SECONDS_IN_MIL, // 4 second sync delay
     LEGACY_STORAGE_KEY = 'text',
     STORAGE_KEY = 'v2',
-    textAreaEl = document.getElementById('text') as HTMLTextAreaElement,
+    padEl = document.getElementById('pad') as HTMLElement,
+    statusCountEl = document.getElementById('status-count'),
+    lastSyncedEl = document.getElementById('last-synced'),
+    quotaFillEl = document.getElementById('quota-fill') as HTMLElement | null,
+    quotaPctEl = document.getElementById('quota-pct'),
+    nearLimitEl = document.getElementById('near-limit'),
     copyButtonEl = document.getElementById('copy'),
     clearButtonEl = document.getElementById('clear'),
-    themeToggleEl = document.getElementById('theme-toggle'),
     exportButtonEl = document.getElementById('export'),
-    countModeEl = document.getElementById('count-mode') as HTMLSelectElement | null,
+    drawerEl = document.getElementById('drawer'),
+    drawerToggleEl = document.getElementById('drawer-toggle'),
     storage = chrome.storage,
     storageObject: Record<string, string> = {};
   let remoteStoredText = '';
+  let settings: PadSettings = { ...DEFAULT_SETTINGS };
+  let countMode: 'bytes' | 'chars' | 'words' = 'words';
+  let flashTimer: ReturnType<typeof setTimeout> | undefined;
+  let flashMessage = '';
 
   type Theme = 'light' | 'dark';
 
   const getSystemTheme = (): Theme =>
     globalThis.matchMedia?.('(prefers-color-scheme: light)')?.matches ? 'light' : 'dark';
 
-  const applyTheme = (theme: Theme) => {
-    document.documentElement.setAttribute('data-theme', theme);
-    if (themeToggleEl) {
-      themeToggleEl.textContent = theme === 'dark' ? 'Light' : 'Dark';
-    }
+  const getEffectiveTheme = (): Theme =>
+    (document.documentElement.getAttribute('data-theme') as Theme | null) ?? getSystemTheme();
+
+  const countWords = (text: string): number => {
+    const trimmed = text.trim();
+    return trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length;
   };
 
-  const removeExplicitTheme = () => {
-    document.documentElement.removeAttribute('data-theme');
-    if (themeToggleEl) {
-      themeToggleEl.textContent = getSystemTheme() === 'dark' ? 'Light' : 'Dark';
-    }
-  };
-
-  const updateUsage = () => {
-    const numCharEl = document.getElementById('num-chars');
-    if (!numCharEl) {
+  const countLabel = (): void => {
+    if (!statusCountEl) {
       return;
     }
-    const usageMaxEl = document.getElementById('usage-max') as HTMLElement | null;
+    if (flashMessage !== '') {
+      statusCountEl.textContent = flashMessage;
+      return;
+    }
+    if (countMode === 'chars') {
+      statusCountEl.textContent = `${editor.value.length} chars`;
+      return;
+    }
+    if (countMode === 'words') {
+      statusCountEl.textContent = `${countWords(editor.value)} words`;
+      return;
+    }
+    storage.sync.getBytesInUse(null, (inUse) => {
+      statusCountEl.textContent = `${inUse} / ${QUOTA_BYTES} B`;
+    });
+  };
 
-    const mode = countModeEl?.value ?? 'bytes';
-    if (mode === 'chars') {
-      numCharEl.innerText = String(textAreaEl.value.length);
-      if (usageMaxEl) {
-        usageMaxEl.hidden = false;
-        usageMaxEl.innerText = 'Char(s)';
+  const updateQuota = (): void => {
+    storage.sync.getBytesInUse(null, (inUse) => {
+      const pct = Math.max(0, Math.min(100, Math.round((inUse / QUOTA_BYTES) * 100)));
+      if (quotaFillEl) {
+        quotaFillEl.style.width = `${pct}%`;
       }
-      return;
-    }
-    if (mode === 'words') {
-      const trimmed = textAreaEl.value.trim();
-      numCharEl.innerText = trimmed.length === 0 ? '0' : String(trimmed.split(/\s+/).length);
-      if (usageMaxEl) {
-        usageMaxEl.hidden = false;
-        usageMaxEl.innerText = 'Word(s)';
+      if (quotaPctEl) {
+        quotaPctEl.textContent = `${pct}%`;
       }
-      return;
-    }
-
-    if (usageMaxEl) {
-      usageMaxEl.hidden = false;
-      usageMaxEl.innerText = '/ 8192 Bytes';
-    }
-    storage.sync.getBytesInUse(null, (inUse) => (numCharEl.innerText = String(inUse)));
+      if (nearLimitEl) {
+        nearLimitEl.hidden = pct < NEAR_LIMIT_PCT;
+        nearLimitEl.textContent = `approaching sync limit — ${QUOTA_BYTES - inUse} B left`;
+      }
+    });
   };
 
-  const updateLastSynced = () => {
-    const lastSyncedEl = document.getElementById('last-synced');
+  const updateUsage = (): void => {
+    countLabel();
+    updateQuota();
+  };
+
+  const flash = (message: string): void => {
+    flashMessage = message;
+    countLabel();
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => {
+      flashMessage = '';
+      countLabel();
+    }, FLASH_MS);
+  };
+
+  const updateLastSynced = (): void => {
     if (!lastSyncedEl) {
       return;
     }
     const now = new Date();
-    lastSyncedEl.innerText = `Synced: ${now.toLocaleTimeString([], {
+    lastSyncedEl.textContent = `synced ${now.toLocaleTimeString([], {
       hour: '2-digit',
       minute: '2-digit',
     })}`;
   };
 
-  // Set the number of bytes in use
+  const storeCursorPosition = throttle(() => {
+    storage.local
+      ?.set({
+        [CURSOR_KEY]: {
+          start: editor.selectionStart,
+          end: editor.selectionStart,
+        },
+      })
+      .catch((e: unknown) => {
+        console.warn(e);
+      });
+  }, 500);
+
+  const typewriterScroll = (): void => {
+    if (!document.body.classList.contains('ww-typewriter')) {
+      return;
+    }
+    editor.activeLineElement?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  };
+
+  const throttledStorageUpdate = throttle(() => {
+    storageObject[STORAGE_KEY] = editor.value;
+    storage.sync
+      .set(storageObject)
+      .then(() => {
+        updateUsage();
+        updateLastSynced();
+      })
+      .catch((e: unknown) => {
+        console.warn(e);
+      });
+  }, CHANGE_DELAY);
+
+  const immediateStorageUpdate = (): void => {
+    storageObject[STORAGE_KEY] = editor.value;
+    storage.sync
+      .set(storageObject)
+      .then(() => {
+        updateUsage();
+        updateLastSynced();
+      })
+      .catch((e: unknown) => {
+        console.warn(e);
+      });
+  };
+
+  const editor = new MarkdownEditor({
+    container: padEl,
+    onInput: () => {
+      throttledStorageUpdate();
+      if (countMode !== 'bytes') {
+        countLabel();
+      }
+      storeCursorPosition();
+    },
+    onCaretMove: () => {
+      storeCursorPosition();
+      typewriterScroll();
+    },
+  });
+
+  const refreshDrawerState = (): void => {
+    if (!drawerEl) {
+      return;
+    }
+    for (const button of drawerEl.querySelectorAll<HTMLButtonElement>('[data-font]')) {
+      button.classList.toggle('ww-on', button.dataset.font === settings.font);
+    }
+    for (const button of drawerEl.querySelectorAll<HTMLButtonElement>('[data-width]')) {
+      button.classList.toggle('ww-on', Number(button.dataset.width) === settings.width);
+    }
+    for (const button of drawerEl.querySelectorAll<HTMLButtonElement>('[data-lh]')) {
+      button.classList.toggle('ww-on', Number(button.dataset.lh) === settings.lineHeight);
+    }
+    const theme = getEffectiveTheme();
+    for (const button of drawerEl.querySelectorAll<HTMLButtonElement>('[data-set-theme]')) {
+      button.classList.toggle('ww-on', button.dataset.setTheme === theme);
+    }
+    const sizeLabelEl = document.getElementById('size-label');
+    if (sizeLabelEl) {
+      sizeLabelEl.textContent = `${settings.size}px`;
+    }
+    document.getElementById('mode-focus')?.classList.toggle('ww-on', settings.focus);
+    document.getElementById('mode-typewriter')?.classList.toggle('ww-on', settings.typewriter);
+  };
+
+  const saveSettings = (patch: Partial<PadSettings>): void => {
+    settings = { ...settings, ...patch };
+    applySettings(settings, document.documentElement, document.body);
+    refreshDrawerState();
+    storage.local?.set({ [SETTINGS_KEY]: settings }).catch((e: unknown) => {
+      console.warn(e);
+    });
+  };
+
+  const applyTheme = (theme: Theme): void => {
+    document.documentElement.setAttribute('data-theme', theme);
+    refreshDrawerState();
+  };
+
+  const removeExplicitTheme = (): void => {
+    document.documentElement.removeAttribute('data-theme');
+    refreshDrawerState();
+  };
+
+  const setDrawerOpen = (open: boolean): void => {
+    if (!drawerEl || !drawerToggleEl) {
+      return;
+    }
+    drawerEl.hidden = !open;
+    drawerToggleEl.setAttribute('aria-expanded', String(open));
+    document.body.classList.toggle('ww-drawer-open', open);
+  };
+
+  const copyAllText = async (): Promise<void> => {
+    try {
+      if (globalThis.navigator?.clipboard?.writeText) {
+        await globalThis.navigator.clipboard.writeText(editor.value);
+        flash('copied to clipboard');
+        return;
+      }
+    } catch (e: unknown) {
+      console.warn(e);
+    }
+
+    const helper = document.createElement('textarea');
+    helper.value = editor.value;
+    document.body.appendChild(helper);
+    helper.select();
+    try {
+      document.execCommand('copy');
+      flash('copied to clipboard');
+    } catch (e: unknown) {
+      console.warn(e);
+    }
+    helper.remove();
+    editor.focus();
+  };
+
+  const exportText = (): void => {
+    const blob = new Blob([editor.value], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'write-wall.md';
+    link.click();
+    URL.revokeObjectURL(url);
+    flash('exported write-wall.md');
+  };
+
+  // ── Initial load ─────────────────────────────────────────────
+
   updateUsage();
 
-  // Load theme preference
   if (storage.local) {
-    storage.local.get(THEME_KEY, (localItems: Record<string, unknown>) => {
-      const stored = localItems[THEME_KEY] as string | undefined;
-      if (stored === 'light' || stored === 'dark') {
-        applyTheme(stored);
-      } else {
-        removeExplicitTheme();
-      }
-    });
+    storage.local.get(
+      [THEME_KEY, SETTINGS_KEY, COUNT_MODE_KEY],
+      (localItems: Record<string, unknown>) => {
+        const storedTheme = localItems[THEME_KEY] as string | undefined;
+        if (storedTheme === 'light' || storedTheme === 'dark') {
+          applyTheme(storedTheme);
+        } else {
+          removeExplicitTheme();
+        }
+        const storedMode = localItems[COUNT_MODE_KEY] as string | undefined;
+        if (storedMode === 'bytes' || storedMode === 'chars' || storedMode === 'words') {
+          countMode = storedMode;
+        }
+        settings = normalizeSettings(localItems[SETTINGS_KEY]);
+        applySettings(settings, document.documentElement, document.body);
+        refreshDrawerState();
+        countLabel();
+      },
+    );
+  } else {
+    applySettings(settings, document.documentElement, document.body);
+    refreshDrawerState();
   }
 
   // get or create key to store data
@@ -128,108 +326,22 @@ const THEME_KEY = 'theme';
         remoteStoredText = items[STORAGE_KEY];
       }
       // Value defaults to an empty string if there is no stored value
-      textAreaEl.value = remoteStoredText;
+      editor.value = remoteStoredText;
       updateUsage();
       if (storage.local) {
         storage.local.get(CURSOR_KEY, (localItems: Record<string, unknown>) => {
           const cursor = localItems[CURSOR_KEY] as { start?: number; end?: number } | undefined;
-          if (cursor && typeof textAreaEl.setSelectionRange === 'function') {
-            const start = cursor.start ?? 0;
-            const end = cursor.end ?? start;
-            textAreaEl.setSelectionRange(start, end);
-          }
-          textAreaEl.focus();
+          editor.setSelectionRange(cursor?.start ?? editor.value.length);
         });
       } else {
-        textAreaEl.focus();
+        editor.focus();
       }
     },
   );
 
-  const storeCursorPosition = throttle(() => {
-    storage.local
-      ?.set({
-        [CURSOR_KEY]: {
-          start: textAreaEl.selectionStart ?? 0,
-          end: textAreaEl.selectionEnd ?? 0,
-        },
-      })
-      .catch((e: unknown) => {
-        console.warn(e);
-      });
-  }, 500);
+  // ── Wiring ───────────────────────────────────────────────────
 
-  const throttledStorageUpdate = throttle(() => {
-    storageObject[STORAGE_KEY] = textAreaEl.value;
-    storage.sync
-      .set(storageObject)
-      .then(() => {
-        updateUsage();
-        updateLastSynced();
-      })
-      .catch((e: unknown) => {
-        console.warn(e);
-      });
-  }, CHANGE_DELAY);
-
-  const immediateStorageUpdate = () => {
-    storageObject[STORAGE_KEY] = textAreaEl.value;
-    storage.sync
-      .set(storageObject)
-      .then(() => {
-        updateUsage();
-        updateLastSynced();
-      })
-      .catch((e: unknown) => {
-        console.warn(e);
-      });
-  };
-
-  const copyAllText = async () => {
-    try {
-      if (globalThis.navigator?.clipboard?.writeText) {
-        await globalThis.navigator.clipboard.writeText(textAreaEl.value);
-        return;
-      }
-    } catch (e: unknown) {
-      console.warn(e);
-    }
-
-    textAreaEl.focus();
-    textAreaEl.select();
-    try {
-      document.execCommand('copy');
-    } catch (e: unknown) {
-      console.warn(e);
-    }
-  };
-
-  const updateLocalCount = () => {
-    if (countModeEl && countModeEl.value !== 'bytes') {
-      updateUsage();
-    }
-  };
-
-  const exportText = () => {
-    const blob = new Blob([textAreaEl.value], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'write-wall.txt';
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // update storage which in turn updates usage
-  textAreaEl.addEventListener('input', throttledStorageUpdate);
-  textAreaEl.addEventListener('input', updateLocalCount);
-  textAreaEl.addEventListener('input', storeCursorPosition);
-  textAreaEl.addEventListener('paste', throttledStorageUpdate);
-  textAreaEl.addEventListener('cut', throttledStorageUpdate);
-  textAreaEl.addEventListener('keyup', throttledStorageUpdate);
-  textAreaEl.addEventListener('keyup', storeCursorPosition);
-  textAreaEl.addEventListener('click', storeCursorPosition);
-  textAreaEl.addEventListener('keydown', (event: KeyboardEvent) => {
+  document.addEventListener('keydown', (event: KeyboardEvent) => {
     if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'c') {
       event.preventDefault();
       void copyAllText();
@@ -237,6 +349,9 @@ const THEME_KEY = 'theme';
     if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 's') {
       event.preventDefault();
       immediateStorageUpdate();
+    }
+    if (event.key === 'Escape' && drawerEl && !drawerEl.hidden) {
+      setDrawerOpen(false);
     }
   });
 
@@ -250,31 +365,76 @@ const THEME_KEY = 'theme';
     exportButtonEl.addEventListener('click', exportText);
   }
 
-  if (countModeEl) {
-    countModeEl.addEventListener('change', () => {
-      updateUsage();
-    });
-  }
-
   if (clearButtonEl) {
     clearButtonEl.addEventListener('click', () => {
       if (!globalThis.confirm('Clear all text?')) {
         return;
       }
-      textAreaEl.value = '';
+      editor.value = '';
       throttledStorageUpdate();
+      flash('cleared');
     });
   }
 
-  if (themeToggleEl) {
-    themeToggleEl.addEventListener('click', () => {
-      const current =
-        (document.documentElement.getAttribute('data-theme') as Theme | null) ?? getSystemTheme();
-      const next: Theme = current === 'dark' ? 'light' : 'dark';
-      applyTheme(next);
-      storage.local?.set({ [THEME_KEY]: next }).catch((e: unknown) => {
+  if (statusCountEl) {
+    statusCountEl.addEventListener('click', () => {
+      countMode = countMode === 'words' ? 'chars' : countMode === 'chars' ? 'bytes' : 'words';
+      storage.local?.set({ [COUNT_MODE_KEY]: countMode }).catch((e: unknown) => {
         console.warn(e);
       });
+      countLabel();
+    });
+  }
+
+  if (drawerToggleEl && drawerEl) {
+    drawerToggleEl.addEventListener('click', () => {
+      setDrawerOpen(drawerEl.hidden);
+    });
+  }
+
+  if (drawerEl) {
+    drawerEl.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement | null;
+      const button = target?.closest('button');
+      if (!button) {
+        return;
+      }
+      if (button.dataset.font) {
+        saveSettings({ font: button.dataset.font as PadSettings['font'] });
+        return;
+      }
+      if (button.dataset.width) {
+        saveSettings({ width: Number(button.dataset.width) });
+        return;
+      }
+      if (button.dataset.lh) {
+        saveSettings({ lineHeight: Number(button.dataset.lh) });
+        return;
+      }
+      if (button.dataset.setTheme) {
+        const theme = button.dataset.setTheme as Theme;
+        applyTheme(theme);
+        storage.local?.set({ [THEME_KEY]: theme }).catch((e: unknown) => {
+          console.warn(e);
+        });
+        return;
+      }
+      if (button.id === 'size-down') {
+        saveSettings({ size: clampSize(settings.size - 1) });
+        return;
+      }
+      if (button.id === 'size-up') {
+        saveSettings({ size: clampSize(settings.size + 1) });
+        return;
+      }
+      if (button.id === 'mode-focus') {
+        saveSettings({ focus: !settings.focus });
+        return;
+      }
+      if (button.id === 'mode-typewriter') {
+        saveSettings({ typewriter: !settings.typewriter });
+        typewriterScroll();
+      }
     });
   }
 
