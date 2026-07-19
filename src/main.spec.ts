@@ -1,1299 +1,549 @@
-import { readFileSync } from 'node:fs';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+// @vitest-environment jsdom
+/*
+ * Copyright (c) 2023-2026 Jared M. Scott. This work is licensed under the Creative
+ * Commons Attribution 3.0 Un-ported License. To view a copy of this license,
+ * visit http://creativecommons.org/licenses/by/3.0/ or send a letter to
+ *         Creative Commons,
+ *         444 Castro Street, Suite 900,
+ *         Mountain View, California, 94041, USA.
+ */
 
-interface ChromeSync {
-  MAX_WRITE_OPERATIONS_PER_HOUR: number;
-  getBytesInUse: ReturnType<typeof vi.fn>;
-  get: ReturnType<typeof vi.fn>;
-  set: ReturnType<typeof vi.fn>;
-  remove: ReturnType<typeof vi.fn>;
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const PAGE = `
+  <div id="wordmark">WRITE WALL</div>
+  <div id="scroll"><div id="paper"><div id="pad"></div></div></div>
+  <div id="status">
+    <div id="actions">
+      <button id="export" type="button">Export</button>
+      <button id="copy" type="button">Copy</button>
+      <button id="clear" type="button">Clear</button>
+    </div>
+    <button id="status-count" type="button">0</button>
+    <span id="last-synced">synced --</span>
+    <span id="quota-bar"><span id="quota-fill"></span></span>
+    <span id="quota-pct">0%</span>
+    <span id="near-limit" hidden></span>
+  </div>
+  <button id="drawer-toggle" type="button" aria-expanded="false">Aa</button>
+  <div id="drawer" hidden>
+    <button type="button" data-font="mono">Mono</button>
+    <button type="button" data-font="serif">Serif</button>
+    <button type="button" data-width="560">Narrow</button>
+    <button type="button" data-width="820">Wide</button>
+    <button type="button" data-lh="1.5">Tight</button>
+    <button type="button" data-lh="2">Open</button>
+    <button type="button" data-set-theme="light">Light</button>
+    <button type="button" data-set-theme="dark">Dark</button>
+    <button id="size-down" type="button">-</button>
+    <button id="size-label" type="button" disabled>17px</button>
+    <button id="size-up" type="button">+</button>
+    <button id="mode-focus" type="button">Focus</button>
+    <button id="mode-typewriter" type="button">Typewriter</button>
+  </div>
+`;
+
+interface ChromeMock {
+  storage: {
+    sync: {
+      MAX_WRITE_OPERATIONS_PER_HOUR: number;
+      get: ReturnType<typeof vi.fn>;
+      set: ReturnType<typeof vi.fn>;
+      remove: ReturnType<typeof vi.fn>;
+      getBytesInUse: ReturnType<typeof vi.fn>;
+    };
+    local?: {
+      get: ReturnType<typeof vi.fn>;
+      set: ReturnType<typeof vi.fn>;
+    };
+    onChanged?: {
+      addListener: ReturnType<typeof vi.fn>;
+    };
+  };
 }
 
-interface ChromeLocal {
-  get: ReturnType<typeof vi.fn>;
-  set: ReturnType<typeof vi.fn>;
-}
-
-const setupMainTest = (
-  items: Record<string, string | undefined>,
-  options: {
-    includeClearButton?: boolean;
-    includeNumChars?: boolean;
-    localOverrides?: Partial<ChromeLocal>;
-    syncOverrides?: Partial<ChromeSync>;
-  } = {},
-) => {
-  const {
-    includeClearButton = true,
-    includeNumChars = true,
-    localOverrides = {},
-    syncOverrides = {},
-  } = options;
-  const handlers = new Map<string, Array<(event?: unknown) => void>>();
-  const textAreaEl = {
-    value: '',
-    selectionStart: 0,
-    selectionEnd: 0,
-    focus: vi.fn(),
-    select: vi.fn(),
-    setSelectionRange: vi.fn(),
-    addEventListener: vi.fn((event: string, handler: (event?: unknown) => void) => {
-      const existing = handlers.get(event);
-      if (existing) {
-        existing.push(handler);
-      } else {
-        handlers.set(event, [handler]);
-      }
-    }),
-  };
-  const clearHandlers = new Map<string, () => void>();
-  const copyHandlers = new Map<string, () => void>();
-  const exportHandlers = new Map<string, () => void>();
-  const countModeHandlers = new Map<string, () => void>();
-  const countModeEl = {
-    value: 'bytes',
-    addEventListener: vi.fn((event: string, handler: () => void) => {
-      countModeHandlers.set(event, handler);
-    }),
-  };
-  const exportButtonEl = {
-    addEventListener: vi.fn((event: string, handler: () => void) => {
-      exportHandlers.set(event, handler);
-    }),
-  };
-  const copyButtonEl = {
-    addEventListener: vi.fn((event: string, handler: () => void) => {
-      copyHandlers.set(event, handler);
-    }),
-  };
-  const clearButtonEl = {
-    addEventListener: vi.fn((event: string, handler: () => void) => {
-      clearHandlers.set(event, handler);
-    }),
-  };
-  const themeToggleHandlers = new Map<string, () => void>();
-  const themeToggleEl = {
-    textContent: 'Light',
-    addEventListener: vi.fn((event: string, handler: () => void) => {
-      themeToggleHandlers.set(event, handler);
-    }),
-  };
-  const numCharsEl = { innerText: '' };
-  const usageMaxEl = { hidden: false, innerText: '' };
-  const lastSyncedEl = { innerText: 'Synced: --' };
-
-  const getBytesInUse = vi.fn((_: unknown, callback: (inUse: number) => void) => {
-    callback(42);
-  });
-  const get = vi.fn((_: unknown, callback: (items: Record<string, string | undefined>) => void) => {
-    callback(items);
-  });
-  const set = vi.fn(() => Promise.resolve());
-  const remove = vi.fn(() => Promise.resolve());
-
-  const sync: ChromeSync = {
-    MAX_WRITE_OPERATIONS_PER_HOUR: 3600,
-    getBytesInUse,
-    get,
-    set,
-    remove,
-    ...syncOverrides,
-  };
-  const local: ChromeLocal = {
-    get: vi.fn((_: unknown, callback: (items: Record<string, unknown>) => void) => {
-      callback({});
-    }),
-    set: vi.fn(() => Promise.resolve()),
-    ...localOverrides,
-  };
-
-  const chrome = {
+const buildChrome = (
+  syncItems: Record<string, string | undefined> = {},
+  localItems: Record<string, unknown> = {},
+  options: { bytesInUse?: number; includeLocal?: boolean } = {},
+): ChromeMock => {
+  const { bytesInUse = 100, includeLocal = true } = options;
+  const chromeMock: ChromeMock = {
     storage: {
-      sync,
-      local,
+      sync: {
+        MAX_WRITE_OPERATIONS_PER_HOUR: 1800,
+        get: vi.fn((_keys: unknown, cb: (items: Record<string, string | undefined>) => void) => {
+          cb(syncItems);
+        }),
+        set: vi.fn(() => Promise.resolve()),
+        remove: vi.fn(() => Promise.resolve()),
+        getBytesInUse: vi.fn((_keys: unknown, cb: (inUse: number) => void) => {
+          cb(bytesInUse);
+        }),
+      },
     },
   };
-
-  const document = {
-    getElementById: vi.fn((id: string) => {
-      if (id === 'text') {
-        return textAreaEl;
-      }
-      if (id === 'copy') {
-        return copyButtonEl;
-      }
-      if (id === 'export') {
-        return exportButtonEl;
-      }
-      if (id === 'count-mode') {
-        return countModeEl;
-      }
-      if (id === 'theme-toggle') {
-        return themeToggleEl;
-      }
-      if (id === 'clear') {
-        return includeClearButton ? clearButtonEl : null;
-      }
-      if (id === 'num-chars') {
-        return includeNumChars ? numCharsEl : null;
-      }
-      if (id === 'usage-max') {
-        return usageMaxEl;
-      }
-      if (id === 'last-synced') {
-        return lastSyncedEl;
-      }
-      return null;
-    }),
-    documentElement: {
-      _dataTheme: null as string | null,
-      setAttribute: vi.fn(function (
-        this: { _dataTheme: string | null },
-        _attr: string,
-        value: string,
-      ) {
-        this._dataTheme = value;
+  if (includeLocal) {
+    chromeMock.storage.local = {
+      get: vi.fn((_keys: unknown, cb: (items: Record<string, unknown>) => void) => {
+        cb(localItems);
       }),
-      getAttribute: vi.fn(function (this: { _dataTheme: string | null }) {
-        return this._dataTheme;
-      }),
-      removeAttribute: vi.fn(function (this: { _dataTheme: string | null }) {
-        this._dataTheme = null;
-      }),
-    },
-    createElement: vi.fn(() => ({
-      href: '',
-      download: '',
-      click: vi.fn(),
-    })),
-  };
-
-  return {
-    chrome,
-    document,
-    getCopyHandler: (event: string) => copyHandlers.get(event) ?? null,
-    getExportHandler: (event: string) => exportHandlers.get(event) ?? null,
-    getClearHandler: (event: string) => clearHandlers.get(event) ?? null,
-    getThemeToggleHandler: (event: string) => themeToggleHandlers.get(event) ?? null,
-    getHandler: (event: string) => {
-      const list = handlers.get(event);
-      if (!list) {
-        return null;
-      }
-      return (payload?: unknown) => {
-        for (const handler of list) {
-          handler(payload);
-        }
-      };
-    },
-    getCountModeHandler: (event: string) => countModeHandlers.get(event) ?? null,
-    countModeEl,
-    local,
-    lastSyncedEl,
-    themeToggleEl,
-    numCharsEl,
-    sync,
-    textAreaEl,
-    usageMaxEl,
-  };
+      set: vi.fn(() => Promise.resolve()),
+    };
+  }
+  chromeMock.storage.onChanged = { addListener: vi.fn() };
+  return chromeMock;
 };
 
-describe('main UI bootstrap', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
-    vi.useRealTimers();
-  });
+const boot = async (
+  syncItems: Record<string, string | undefined> = {},
+  localItems: Record<string, unknown> = {},
+  options: { bytesInUse?: number; includeLocal?: boolean } = {},
+) => {
+  document.body.innerHTML = PAGE;
+  document.documentElement.removeAttribute('data-theme');
+  document.body.className = '';
+  const chromeMock = buildChrome(syncItems, localItems, options);
+  vi.stubGlobal('chrome', chromeMock);
+  vi.resetModules();
+  await import('./main.js');
+  return chromeMock;
+};
 
-  it('defaults to an empty string when there is no stored text', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl, sync } = setupMainTest({});
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
+const pad = () => document.getElementById('pad') as HTMLElement;
+const activeLine = () => document.querySelector('.ww-active') as HTMLElement;
 
-    await import('./main.js');
+const typeInActive = (text: string) => {
+  const el = activeLine();
+  el.textContent = text;
+  el.dispatchEvent(new Event('input'));
+};
 
-    expect(textAreaEl.value).toBe('');
-    expect(sync.set).not.toHaveBeenCalled();
-    expect(sync.remove).not.toHaveBeenCalled();
-  });
+const flushMicrotasks = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-  it('hydrates the textarea from the v2 key', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl, sync, numCharsEl } = setupMainTest({ v2: 'hello' });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    expect(textAreaEl.value).toBe('hello');
-    expect(sync.set).not.toHaveBeenCalled();
-    expect(sync.remove).not.toHaveBeenCalled();
-    expect(sync.getBytesInUse).toHaveBeenCalledTimes(2);
-    expect(numCharsEl.innerText).toBe('42');
-  });
-
-  it('migrates legacy storage into v2', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl, sync } = setupMainTest({ text: 'legacy' });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    expect(textAreaEl.value).toBe('legacy');
-    expect(sync.set).toHaveBeenCalledWith({ v2: 'legacy' });
-    expect(sync.remove).toHaveBeenCalledWith('text');
-  });
-
-  it('skips usage updates when the counter element is missing', async () => {
-    vi.resetModules();
-    const { chrome, document, sync } = setupMainTest({ v2: 'hello' }, { includeNumChars: false });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    expect(sync.getBytesInUse).not.toHaveBeenCalled();
-  });
-
-  it('logs warnings when legacy migration fails', async () => {
-    vi.resetModules();
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {
-      // noop for test
-    });
-    const error = new Error('migration failed');
-    const { chrome, document, sync } = setupMainTest(
-      { text: 'legacy' },
-      {
-        syncOverrides: {
-          set: vi.fn(() => Promise.reject(error)),
-          remove: vi.fn(() => Promise.reject(error)),
-        },
-      },
-    );
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(sync.set).toHaveBeenCalledTimes(1);
-    expect(sync.remove).toHaveBeenCalledTimes(1);
-    expect(warnSpy).toHaveBeenCalledTimes(2);
-  });
-
-  it('writes to sync storage on keyup with throttling', async () => {
-    vi.useFakeTimers();
-    vi.resetModules();
-    const { chrome, document, textAreaEl, sync, getHandler } = setupMainTest({});
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    const handler = getHandler('keyup');
-    expect(handler).toBeTypeOf('function');
-
-    textAreaEl.value = 'updated';
-    handler?.();
-    handler?.();
-
-    expect(sync.set).toHaveBeenCalledTimes(1);
-    await Promise.resolve();
-    expect(sync.getBytesInUse).toHaveBeenCalledTimes(3);
-
-    const delay = (sync.MAX_WRITE_OPERATIONS_PER_HOUR / 3600) * 4000;
-    vi.advanceTimersByTime(delay);
-    handler?.();
-
-    expect(sync.set).toHaveBeenCalledTimes(2);
-    vi.runOnlyPendingTimers();
-    vi.useRealTimers();
-  });
-
-  it('writes to sync storage on input events', async () => {
-    vi.useFakeTimers();
-    vi.resetModules();
-    const { chrome, document, textAreaEl, sync, getHandler } = setupMainTest({});
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    const handler = getHandler('input');
-    expect(handler).toBeTypeOf('function');
-
-    textAreaEl.value = 'updated';
-    handler?.();
-
-    expect(sync.set).toHaveBeenCalledTimes(1);
-    vi.runOnlyPendingTimers();
-    vi.useRealTimers();
-  });
-
-  it('registers paste and cut handlers', async () => {
-    vi.resetModules();
-    const { chrome, document, getHandler } = setupMainTest({});
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    expect(getHandler('paste')).toBeTypeOf('function');
-    expect(getHandler('cut')).toBeTypeOf('function');
-  });
-
-  it('logs a warning when the sync update fails', async () => {
-    vi.resetModules();
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {
-      // noop for test
-    });
-    const error = new Error('sync failed');
-    const { chrome, document, textAreaEl, sync, getHandler } = setupMainTest(
-      {},
-      {
-        syncOverrides: {
-          set: vi.fn(() => Promise.reject(error)),
-        },
-      },
-    );
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    const handler = getHandler('keyup');
-    textAreaEl.value = 'updated';
-    handler?.();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(sync.set).toHaveBeenCalledTimes(1);
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it('clears the text when confirmed', async () => {
-    vi.useFakeTimers();
-    vi.resetModules();
-    const { chrome, document, textAreaEl, sync, getClearHandler } = setupMainTest({
-      v2: 'hello',
-    });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
+describe('main', () => {
+  beforeEach(() => {
     vi.stubGlobal(
       'confirm',
       vi.fn(() => true),
     );
+    URL.createObjectURL = vi.fn(() => 'blob:mock');
+    URL.revokeObjectURL = vi.fn();
+  });
 
-    await import('./main.js');
-
-    textAreaEl.value = 'updated';
-    const handler = getClearHandler('click');
-    handler?.();
-
-    expect(textAreaEl.value).toBe('');
-    expect(sync.set).toHaveBeenCalledTimes(1);
-    vi.runOnlyPendingTimers();
+  afterEach(() => {
+    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 
-  it('does not clear the text when confirmation is declined', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl, sync, getClearHandler } = setupMainTest({
-      v2: 'hello',
+  describe('loading', () => {
+    it('loads stored v2 text into the editor and restores the cursor', async () => {
+      await boot({ v2: 'hello\nworld' }, { cursor: { start: 2, end: 2 } });
+      const lines = pad().querySelectorAll('.ww-line');
+      expect(lines).toHaveLength(2);
+      expect(activeLine().textContent).toBe('hello');
     });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-    vi.stubGlobal(
-      'confirm',
-      vi.fn(() => false),
-    );
 
-    await import('./main.js');
+    it('migrates the legacy text key to v2 and removes it', async () => {
+      const chromeMock = await boot({ text: 'legacy words' });
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: 'legacy words' });
+      expect(chromeMock.storage.sync.remove).toHaveBeenCalledWith('text');
+    });
 
-    textAreaEl.value = 'updated';
-    const handler = getClearHandler('click');
-    handler?.();
+    it('starts empty without stored text and focuses the editor', async () => {
+      await boot({}, {}, { includeLocal: false });
+      expect(activeLine()).toBeTruthy();
+    });
 
-    expect(textAreaEl.value).toBe('updated');
-    expect(sync.set).not.toHaveBeenCalled();
+    it('applies stored settings on load', async () => {
+      await boot(
+        { v2: 'x' },
+        {
+          settings: {
+            font: 'mono',
+            size: 14,
+            width: 820,
+            lineHeight: 1.5,
+            focus: true,
+            typewriter: false,
+          },
+        },
+      );
+      expect(document.documentElement.style.getPropertyValue('--ww-size')).toBe('14px');
+      expect(document.documentElement.style.getPropertyValue('--ww-width')).toBe('820px');
+      expect(document.body.classList.contains('ww-focus')).toBe(true);
+    });
+
+    it('applies a stored explicit theme', async () => {
+      await boot({ v2: 'x' }, { theme: 'light' });
+      expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    });
+
+    it('leaves theme to the system when nothing is stored', async () => {
+      await boot({ v2: 'x' });
+      expect(document.documentElement.getAttribute('data-theme')).toBeNull();
+    });
   });
 
-  it('copies text to the clipboard via the copy button', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl, getCopyHandler } = setupMainTest({
-      v2: 'hello',
+  describe('editing and sync', () => {
+    it('writes editor content to sync storage on input', async () => {
+      const chromeMock = await boot({ v2: 'start' });
+      typeInActive('start more');
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: 'start more' });
+      await flushMicrotasks();
+      expect(document.getElementById('last-synced')?.textContent).toMatch(/^synced \d/);
     });
-    const writeText = vi.fn(() => Promise.resolve());
-    vi.stubGlobal('navigator', { clipboard: { writeText } });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
 
-    await import('./main.js');
+    it('saves immediately with mod+s', async () => {
+      const chromeMock = await boot({ v2: 'abc' });
+      chromeMock.storage.sync.set.mockClear();
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 's', metaKey: true, cancelable: true }),
+      );
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: 'abc' });
+    });
 
-    textAreaEl.value = 'copied';
-    const handler = getCopyHandler('click');
-    handler?.();
-
-    await Promise.resolve();
-
-    expect(writeText).toHaveBeenCalledWith('copied');
+    it('persists the cursor position', async () => {
+      const chromeMock = await boot({ v2: 'abcdef' });
+      typeInActive('abcdefg');
+      await flushMicrotasks();
+      expect(chromeMock.storage.local?.set).toHaveBeenCalledWith(
+        expect.objectContaining({ cursor: expect.anything() }),
+      );
+    });
   });
 
-  it('falls back to execCommand when clipboard is unavailable', async () => {
-    vi.resetModules();
-    const execCommand = vi.fn();
-    const { chrome, document, textAreaEl, getCopyHandler } = setupMainTest({
-      v2: 'hello',
-    });
-    vi.stubGlobal('navigator', {});
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', {
-      ...document,
-      execCommand,
+  describe('status bar', () => {
+    it('shows word count by default', async () => {
+      await boot({ v2: 'one two three' });
+      expect(document.getElementById('status-count')?.textContent).toBe('3 words');
     });
 
-    await import('./main.js');
+    it('cycles count modes on click and persists the mode', async () => {
+      const chromeMock = await boot({ v2: 'one two' });
+      const countEl = document.getElementById('status-count') as HTMLElement;
+      countEl.click();
+      expect(countEl.textContent).toBe('7 chars');
+      countEl.click();
+      expect(countEl.textContent).toBe('100 / 8192 B');
+      countEl.click();
+      expect(countEl.textContent).toBe('2 words');
+      expect(chromeMock.storage.local?.set).toHaveBeenCalledWith({ countMode: 'chars' });
+    });
 
-    textAreaEl.value = 'copied';
-    const handler = getCopyHandler('click');
-    handler?.();
+    it('restores a stored count mode', async () => {
+      await boot({ v2: 'abc' }, { countMode: 'chars' });
+      expect(document.getElementById('status-count')?.textContent).toBe('3 chars');
+    });
 
-    expect(execCommand).toHaveBeenCalledWith('copy');
+    it('renders quota percentage and fill width', async () => {
+      await boot({ v2: 'x' }, {}, { bytesInUse: 4096 });
+      expect(document.getElementById('quota-pct')?.textContent).toBe('50%');
+      expect((document.getElementById('quota-fill') as HTMLElement).style.width).toBe('50%');
+      expect((document.getElementById('near-limit') as HTMLElement).hidden).toBe(true);
+    });
+
+    it('warns when approaching the sync limit', async () => {
+      await boot({ v2: 'x' }, {}, { bytesInUse: 7900 });
+      const nearLimit = document.getElementById('near-limit') as HTMLElement;
+      expect(nearLimit.hidden).toBe(false);
+      expect(nearLimit.textContent).toContain('292 B left');
+    });
   });
 
-  it('copies text on Ctrl/Cmd+Shift+C', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl, getHandler } = setupMainTest({
-      v2: 'hello',
-    });
-    const writeText = vi.fn(() => Promise.resolve());
-    vi.stubGlobal('navigator', { clipboard: { writeText } });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    const handler = getHandler('keydown');
-    const preventDefault = vi.fn();
-    textAreaEl.value = 'shortcut';
-    handler?.({ key: 'C', ctrlKey: true, metaKey: false, shiftKey: true, preventDefault });
-
-    await Promise.resolve();
-
-    expect(preventDefault).toHaveBeenCalledTimes(1);
-    expect(writeText).toHaveBeenCalledWith('shortcut');
-  });
-
-  it('exports the text as a file when requested', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl, getExportHandler } = setupMainTest({
-      v2: 'hello',
-    });
-    const anchor = {
-      href: '',
-      download: '',
-      click: vi.fn(),
-    };
-    const createObjectURL = vi.fn(() => 'blob:mock');
-    const revokeObjectURL = vi.fn();
-    const OriginalURL = globalThis.URL;
-    class MockURL extends OriginalURL {}
-    (MockURL as unknown as typeof URL).createObjectURL = createObjectURL;
-    (MockURL as unknown as typeof URL).revokeObjectURL = revokeObjectURL;
-    vi.stubGlobal('URL', MockURL);
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', {
-      ...document,
-      createElement: vi.fn(() => anchor),
-    });
-
-    await import('./main.js');
-
-    textAreaEl.value = 'exported';
-    const handler = getExportHandler('click');
-    handler?.();
-
-    expect(createObjectURL).toHaveBeenCalledTimes(1);
-    expect(anchor.download).toBe('write-wall.txt');
-    expect(anchor.click).toHaveBeenCalledTimes(1);
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock');
-  });
-
-  it('updates the counter to chars when selected', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl, numCharsEl, countModeEl, getCountModeHandler } =
-      setupMainTest({
-        v2: 'hello',
+  describe('actions', () => {
+    it('copies markdown source to the clipboard and flashes', async () => {
+      vi.useFakeTimers();
+      const writeText = vi.fn(() => Promise.resolve());
+      Object.defineProperty(globalThis.navigator, 'clipboard', {
+        value: { writeText },
+        configurable: true,
       });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    textAreaEl.value = 'hello';
-    countModeEl.value = 'chars';
-    const handler = getCountModeHandler('change');
-    handler?.();
-
-    expect(numCharsEl.innerText).toBe('5');
-  });
-
-  it('updates the usage label when switching modes', async () => {
-    vi.resetModules();
-    const { chrome, document, countModeEl, getCountModeHandler, usageMaxEl } = setupMainTest({
-      v2: 'hello',
+      await boot({ v2: '# hi' });
+      (document.getElementById('copy') as HTMLElement).click();
+      await Promise.resolve();
+      expect(writeText).toHaveBeenCalledWith('# hi');
+      await vi.advanceTimersByTimeAsync(1);
+      expect(document.getElementById('status-count')?.textContent).toBe('copied to clipboard');
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(document.getElementById('status-count')?.textContent).toBe('2 words');
     });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
 
-    await import('./main.js');
-
-    countModeEl.value = 'chars';
-    const handler = getCountModeHandler('change');
-    handler?.();
-
-    expect(usageMaxEl.hidden).toBe(false);
-    expect(usageMaxEl.innerText).toBe('Char(s)');
-
-    countModeEl.value = 'bytes';
-    handler?.();
-
-    expect(usageMaxEl.hidden).toBe(false);
-    expect(usageMaxEl.innerText).toBe('/ 8192 Bytes');
-
-    countModeEl.value = 'words';
-    handler?.();
-
-    expect(usageMaxEl.hidden).toBe(false);
-    expect(usageMaxEl.innerText).toBe('Word(s)');
-  });
-
-  it('updates the counter to words when selected', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl, numCharsEl, countModeEl, getCountModeHandler } =
-      setupMainTest({
-        v2: 'hello',
+    it('falls back to execCommand when the clipboard API is missing', async () => {
+      Object.defineProperty(globalThis.navigator, 'clipboard', {
+        value: undefined,
+        configurable: true,
       });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    textAreaEl.value = 'hello world';
-    countModeEl.value = 'words';
-    const handler = getCountModeHandler('change');
-    handler?.();
-
-    expect(numCharsEl.innerText).toBe('2');
-  });
-
-  it('updates the counter on input when not in bytes mode', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl, numCharsEl, countModeEl, getHandler } = setupMainTest({
-      v2: 'hello',
+      document.execCommand = vi.fn(() => true);
+      await boot({ v2: 'plain' });
+      (document.getElementById('copy') as HTMLElement).click();
+      await flushMicrotasks();
+      expect(document.execCommand).toHaveBeenCalledWith('copy');
     });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
 
-    await import('./main.js');
-
-    countModeEl.value = 'chars';
-    textAreaEl.value = 'updated';
-    const handler = getHandler('input');
-    handler?.();
-
-    expect(numCharsEl.innerText).toBe('7');
-  });
-
-  it('restores cursor position from local storage', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl } = setupMainTest(
-      { v2: 'hello' },
-      {
-        localOverrides: {
-          get: vi.fn((_: unknown, callback: (items: Record<string, unknown>) => void) => {
-            callback({
-              cursor: { start: 2, end: 4 },
-            });
-          }),
-        },
-      },
-    );
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    expect(textAreaEl.setSelectionRange).toHaveBeenCalledWith(2, 4);
-  });
-
-  it('stores cursor position in local storage', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl, local, getHandler } = setupMainTest({
-      v2: 'hello',
+    it('copies with mod+shift+c', async () => {
+      const writeText = vi.fn(() => Promise.resolve());
+      Object.defineProperty(globalThis.navigator, 'clipboard', {
+        value: { writeText },
+        configurable: true,
+      });
+      await boot({ v2: 'abc' });
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'c', metaKey: true, shiftKey: true, cancelable: true }),
+      );
+      await flushMicrotasks();
+      expect(writeText).toHaveBeenCalledWith('abc');
     });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
 
-    await import('./main.js');
+    it('exports the pad as a markdown file', async () => {
+      await boot({ v2: 'notes' });
+      (document.getElementById('export') as HTMLElement).click();
+      expect(URL.createObjectURL).toHaveBeenCalled();
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock');
+    });
 
-    textAreaEl.selectionStart = 1;
-    textAreaEl.selectionEnd = 3;
-    const handler = getHandler('input');
-    handler?.();
+    it('clears the pad after confirmation', async () => {
+      const chromeMock = await boot({ v2: 'delete me' });
+      (document.getElementById('clear') as HTMLElement).click();
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: '' });
+    });
 
-    expect(local.set).toHaveBeenCalledWith({
-      cursor: { start: 1, end: 3 },
+    it('keeps text when the clear confirmation is declined', async () => {
+      vi.stubGlobal(
+        'confirm',
+        vi.fn(() => false),
+      );
+      const chromeMock = await boot({ v2: 'keep me' });
+      chromeMock.storage.sync.set.mockClear();
+      (document.getElementById('clear') as HTMLElement).click();
+      expect(chromeMock.storage.sync.set).not.toHaveBeenCalled();
     });
   });
 
-  it('focuses the textarea after loading', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl } = setupMainTest({ v2: 'hello' });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
+  describe('resilience and system theme', () => {
+    it('boots with a minimal DOM missing every optional element', async () => {
+      document.body.innerHTML = '<div id="pad"></div>';
+      const chromeMock = buildChrome({ v2: 'hi there' });
+      vi.stubGlobal('chrome', chromeMock);
+      vi.resetModules();
+      await import('./main.js');
+      typeInActive('hi there!');
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: 'hi there!' });
+    });
 
-    await import('./main.js');
+    it('skips the count label refresh while in bytes mode', async () => {
+      await boot({ v2: 'x' }, { countMode: 'bytes' });
+      const countEl = document.getElementById('status-count') as HTMLElement;
+      expect(countEl.textContent).toBe('100 / 8192 B');
+      typeInActive('xy');
+      expect(countEl.textContent).toBe('100 / 8192 B');
+    });
 
-    expect(textAreaEl.focus).toHaveBeenCalledTimes(1);
+    it('follows system theme changes when no explicit theme is set', async () => {
+      let changeHandler: (() => void) | undefined;
+      vi.stubGlobal(
+        'matchMedia',
+        vi.fn(() => ({
+          matches: true,
+          addEventListener: (_type: string, handler: () => void) => {
+            changeHandler = handler;
+          },
+        })),
+      );
+      await boot({ v2: 'x' });
+      expect(document.documentElement.getAttribute('data-theme')).toBeNull();
+      changeHandler?.();
+      expect(document.documentElement.getAttribute('data-theme')).toBeNull();
+      (document.querySelector('[data-set-theme="dark"]') as HTMLElement).click();
+      changeHandler?.();
+      expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    });
+
+    it('handles execCommand copy failures', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      Object.defineProperty(globalThis.navigator, 'clipboard', {
+        value: undefined,
+        configurable: true,
+      });
+      document.execCommand = vi.fn(() => {
+        throw new Error('nope');
+      });
+      await boot({ v2: 'plain' });
+      (document.getElementById('copy') as HTMLElement).click();
+      await flushMicrotasks();
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+    });
   });
 
-  it('updates the last synced indicator after saving', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl, lastSyncedEl, getHandler } = setupMainTest({});
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
+  describe('sync integrity', () => {
+    it('flushes trailing edits made inside the throttle window', async () => {
+      vi.useFakeTimers();
+      const chromeMock = await boot({ v2: 'a' });
+      chromeMock.storage.sync.set.mockClear();
+      typeInActive('ab');
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: 'ab' });
+      typeInActive('abc');
+      typeInActive('abcd');
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(8001);
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: 'abcd' });
+    });
 
-    await import('./main.js');
+    it('persists a clear immediately even during an open throttle window', async () => {
+      vi.useFakeTimers();
+      const chromeMock = await boot({ v2: 'text' });
+      typeInActive('text more');
+      chromeMock.storage.sync.set.mockClear();
+      (document.getElementById('clear') as HTMLElement).click();
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: '' });
+    });
 
-    textAreaEl.value = 'updated';
-    const handler = getHandler('keyup');
-    handler?.();
-    await Promise.resolve();
-    await Promise.resolve();
+    it('surfaces sync write failures instead of failing silently', async () => {
+      const chromeMock = await boot({ v2: 'a' });
+      chromeMock.storage.sync.set.mockImplementation(() => Promise.reject(new Error('quota')));
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      typeInActive('ab');
+      await flushMicrotasks();
+      expect(document.getElementById('last-synced')?.textContent).toBe('sync failed');
+      expect(document.getElementById('status-count')?.textContent).toContain('not synced');
+      warn.mockRestore();
+    });
 
-    expect(lastSyncedEl.innerText).not.toBe('Synced: --');
+    it('flushes unsynced text on pagehide', async () => {
+      vi.useFakeTimers();
+      const chromeMock = await boot({ v2: 'a' });
+      typeInActive('ab');
+      typeInActive('abc');
+      chromeMock.storage.sync.set.mockClear();
+      window.dispatchEvent(new Event('pagehide'));
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: 'abc' });
+    });
+
+    it('does not write on pagehide when nothing is unsynced', async () => {
+      const chromeMock = await boot({ v2: 'a' });
+      await flushMicrotasks();
+      chromeMock.storage.sync.set.mockClear();
+      window.dispatchEvent(new Event('pagehide'));
+      expect(chromeMock.storage.sync.set).not.toHaveBeenCalled();
+    });
+
+    it('applies remote storage changes when there are no local edits', async () => {
+      const chromeMock = await boot({ v2: 'local' });
+      await flushMicrotasks();
+      const listener = chromeMock.storage.onChanged?.addListener.mock.calls[0]?.[0] as (
+        changes: Record<string, { newValue?: unknown }>,
+        area: string,
+      ) => void;
+      expect(listener).toBeTypeOf('function');
+      listener({ v2: { newValue: 'from another device' } }, 'sync');
+      const pad = document.getElementById('pad') as HTMLElement;
+      expect(pad.textContent).toContain('from another device');
+    });
+
+    it('keeps local unsynced edits when a remote change arrives', async () => {
+      vi.useFakeTimers();
+      const chromeMock = await boot({ v2: 'local' });
+      typeInActive('local x');
+      typeInActive('local xy');
+      const listener = chromeMock.storage.onChanged?.addListener.mock.calls[0]?.[0] as (
+        changes: Record<string, { newValue?: unknown }>,
+        area: string,
+      ) => void;
+      listener({ v2: { newValue: 'remote wins?' } }, 'sync');
+      const pad = document.getElementById('pad') as HTMLElement;
+      expect(pad.textContent).toContain('local xy');
+    });
   });
 
-  it('forces an immediate save on Ctrl/Cmd+S', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl, sync, getHandler } = setupMainTest({});
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
+  describe('drawer', () => {
+    it('toggles the drawer and closes on Escape', async () => {
+      await boot({ v2: 'x' });
+      const toggle = document.getElementById('drawer-toggle') as HTMLElement;
+      const drawer = document.getElementById('drawer') as HTMLElement;
+      toggle.click();
+      expect(drawer.hidden).toBe(false);
+      expect(document.body.classList.contains('ww-drawer-open')).toBe(true);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(drawer.hidden).toBe(true);
+      toggle.click();
+      toggle.click();
+      expect(drawer.hidden).toBe(true);
+    });
 
-    await import('./main.js');
+    it('changes typeface, width, and line height and persists settings', async () => {
+      const chromeMock = await boot({ v2: 'x' });
+      (document.querySelector('[data-font="mono"]') as HTMLElement).click();
+      (document.querySelector('[data-width="820"]') as HTMLElement).click();
+      (document.querySelector('[data-lh="2"]') as HTMLElement).click();
+      expect(document.documentElement.style.getPropertyValue('--ww-width')).toBe('820px');
+      expect(document.documentElement.style.getPropertyValue('--ww-lh')).toBe('2');
+      expect(chromeMock.storage.local?.set).toHaveBeenCalledWith({
+        settings: expect.objectContaining({ font: 'mono', width: 820, lineHeight: 2 }),
+      });
+      expect(
+        (document.querySelector('[data-font="mono"]') as HTMLElement).classList.contains('ww-on'),
+      ).toBe(true);
+    });
 
-    textAreaEl.value = 'updated';
-    const preventDefault = vi.fn();
-    const handler = getHandler('keydown');
-    handler?.({ key: 's', ctrlKey: true, metaKey: false, shiftKey: false, preventDefault });
-
-    expect(preventDefault).toHaveBeenCalledTimes(1);
-    expect(sync.set).toHaveBeenCalledTimes(1);
-  });
-
-  it('ships a placeholder hint in the UI', () => {
-    const html = readFileSync(new URL('../public/html/index.html', import.meta.url), 'utf8');
-    expect(html).toContain('placeholder="Type here... auto-syncs across Chrome."');
-  });
-
-  it('shows 0 words when text is empty', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl, numCharsEl, countModeEl, getCountModeHandler } =
-      setupMainTest({});
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    textAreaEl.value = '';
-    countModeEl.value = 'words';
-    const handler = getCountModeHandler('change');
-    handler?.();
-
-    expect(numCharsEl.innerText).toBe('0');
-  });
-
-  it('silently returns from updateLastSynced when last-synced element is missing', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl, getHandler } = setupMainTest({});
-    const originalGetElementById = document.getElementById;
-    document.getElementById = vi.fn((id: string) => {
-      if (id === 'last-synced') {
-        return null;
+    it('adjusts font size within limits', async () => {
+      await boot({ v2: 'x' });
+      const up = document.getElementById('size-up') as HTMLElement;
+      for (let i = 0; i < 10; i++) {
+        up.click();
       }
-      return originalGetElementById(id);
-    });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    textAreaEl.value = 'updated';
-    const handler = getHandler('keyup');
-
-    expect(() => handler?.()).not.toThrow();
-
-    await Promise.resolve();
-    await Promise.resolve();
-  });
-
-  it('focuses textarea when storage.local is falsy', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl } = setupMainTest({ v2: 'hello' });
-    chrome.storage.local = undefined as unknown as ChromeLocal;
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    expect(textAreaEl.focus).toHaveBeenCalledTimes(1);
-  });
-
-  it('logs warning when cursor storage fails', async () => {
-    vi.resetModules();
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {
-      // noop for test
-    });
-    const error = new Error('local fail');
-    const { chrome, document, getHandler } = setupMainTest(
-      { v2: 'hello' },
-      {
-        localOverrides: {
-          set: vi.fn(() => Promise.reject(error)),
-        },
-      },
-    );
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    const handler = getHandler('input');
-    handler?.();
-
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(warnSpy).toHaveBeenCalledWith(error);
-  });
-
-  it('logs warning when immediate save (Ctrl+S) fails', async () => {
-    vi.resetModules();
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {
-      // noop for test
-    });
-    const error = new Error('sync fail');
-    const { chrome, document, textAreaEl, getHandler } = setupMainTest(
-      {},
-      {
-        syncOverrides: {
-          set: vi.fn(() => Promise.reject(error)),
-        },
-      },
-    );
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    textAreaEl.value = 'updated';
-    const preventDefault = vi.fn();
-    const handler = getHandler('keydown');
-    handler?.({ key: 's', ctrlKey: true, metaKey: false, shiftKey: false, preventDefault });
-
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(warnSpy).toHaveBeenCalledWith(error);
-  });
-
-  it('logs warning when clipboard.writeText throws synchronously', async () => {
-    vi.resetModules();
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {
-      // noop for test
-    });
-    const error = new Error('clipboard fail');
-    const writeText = vi.fn(() => {
-      throw error;
-    });
-    const { chrome, document, textAreaEl, getCopyHandler } = setupMainTest({ v2: 'hello' });
-    vi.stubGlobal('navigator', { clipboard: { writeText } });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    textAreaEl.value = 'copied';
-    const handler = getCopyHandler('click');
-    handler?.();
-
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(warnSpy).toHaveBeenCalledWith(error);
-    expect(textAreaEl.select).toHaveBeenCalledTimes(1);
-  });
-
-  it('logs warning when execCommand throws', async () => {
-    vi.resetModules();
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {
-      // noop for test
-    });
-    const error = new Error('exec fail');
-    const execCommand = vi.fn(() => {
-      throw error;
-    });
-    const { chrome, document, textAreaEl, getCopyHandler } = setupMainTest({ v2: 'hello' });
-    vi.stubGlobal('navigator', {});
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', {
-      ...document,
-      execCommand,
-    });
-
-    await import('./main.js');
-
-    textAreaEl.value = 'copied';
-    const handler = getCopyHandler('click');
-    handler?.();
-
-    expect(warnSpy).toHaveBeenCalledWith(error);
-  });
-
-  it('defaults to bytes mode when countModeEl is null', async () => {
-    vi.resetModules();
-    const { chrome, document, numCharsEl, sync } = setupMainTest({ v2: 'hello' });
-    const originalGetElementById = document.getElementById;
-    document.getElementById = vi.fn((id: string) => {
-      if (id === 'count-mode') {
-        return null;
+      expect(document.getElementById('size-label')?.textContent).toBe('22px');
+      const down = document.getElementById('size-down') as HTMLElement;
+      for (let i = 0; i < 20; i++) {
+        down.click();
       }
-      return originalGetElementById(id);
+      expect(document.getElementById('size-label')?.textContent).toBe('13px');
     });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
 
-    await import('./main.js');
-
-    expect(sync.getBytesInUse).toHaveBeenCalled();
-    expect(numCharsEl.innerText).toBe('42');
-  });
-
-  it('skips usageMaxEl update when usage-max element is null', async () => {
-    vi.resetModules();
-    const { chrome, document, numCharsEl, countModeEl, getCountModeHandler } = setupMainTest({
-      v2: 'hello',
+    it('toggles focus and typewriter modes', async () => {
+      await boot({ v2: 'x' });
+      (document.getElementById('mode-focus') as HTMLElement).click();
+      expect(document.body.classList.contains('ww-focus')).toBe(true);
+      (document.getElementById('mode-typewriter') as HTMLElement).click();
+      expect(document.body.classList.contains('ww-typewriter')).toBe(true);
+      (document.getElementById('mode-focus') as HTMLElement).click();
+      expect(document.body.classList.contains('ww-focus')).toBe(false);
     });
-    const originalGetElementById = document.getElementById;
-    document.getElementById = vi.fn((id: string) => {
-      if (id === 'usage-max') {
-        return null;
-      }
-      return originalGetElementById(id);
+
+    it('survives storage write failures on every persistence path', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const chromeMock = await boot({ v2: 'abc' });
+      chromeMock.storage.sync.set.mockImplementation(() => Promise.reject(new Error('sync')));
+      chromeMock.storage.local?.set.mockImplementation(() => Promise.reject(new Error('local')));
+      typeInActive('abcd');
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 's', metaKey: true, cancelable: true }),
+      );
+      (document.querySelector('[data-font="mono"]') as HTMLElement).click();
+      (document.querySelector('[data-set-theme="dark"]') as HTMLElement).click();
+      (document.getElementById('status-count') as HTMLElement).click();
+      await flushMicrotasks();
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
     });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
 
-    await import('./main.js');
-
-    countModeEl.value = 'chars';
-    const handler = getCountModeHandler('change');
-    handler?.();
-
-    expect(numCharsEl.innerText).toBe('5');
-
-    countModeEl.value = 'words';
-    handler?.();
-
-    expect(numCharsEl.innerText).toBe('1');
-
-    countModeEl.value = 'bytes';
-    handler?.();
-  });
-
-  it('restores cursor with missing start and end properties', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl } = setupMainTest(
-      { v2: 'hello' },
-      {
-        localOverrides: {
-          get: vi.fn((_: unknown, callback: (items: Record<string, unknown>) => void) => {
-            callback({
-              cursor: {},
-            });
-          }),
-        },
-      },
-    );
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    expect(textAreaEl.setSelectionRange).toHaveBeenCalledWith(0, 0);
-  });
-
-  it('skips setSelectionRange when cursor data is not present', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl } = setupMainTest(
-      { v2: 'hello' },
-      {
-        localOverrides: {
-          get: vi.fn((_: unknown, callback: (items: Record<string, unknown>) => void) => {
-            callback({});
-          }),
-        },
-      },
-    );
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    expect(textAreaEl.setSelectionRange).not.toHaveBeenCalled();
-    expect(textAreaEl.focus).toHaveBeenCalledTimes(1);
-  });
-
-  it('handles null selectionStart and selectionEnd in cursor storage', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl, local, getHandler } = setupMainTest({
-      v2: 'hello',
+    it('ignores drawer clicks that miss buttons', async () => {
+      await boot({ v2: 'x' });
+      const drawer = document.getElementById('drawer') as HTMLElement;
+      drawer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(document.documentElement.style.getPropertyValue('--ww-width')).toBe('680px');
     });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
 
-    await import('./main.js');
-
-    textAreaEl.selectionStart = null as unknown as number;
-    textAreaEl.selectionEnd = null as unknown as number;
-    const handler = getHandler('input');
-    handler?.();
-
-    expect(local.set).toHaveBeenCalledWith({
-      cursor: { start: 0, end: 0 },
+    it('sets an explicit theme and persists it', async () => {
+      const chromeMock = await boot({ v2: 'x' });
+      (document.querySelector('[data-set-theme="light"]') as HTMLElement).click();
+      expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+      expect(chromeMock.storage.local?.set).toHaveBeenCalledWith({ theme: 'light' });
+      expect(
+        (document.querySelector('[data-set-theme="light"]') as HTMLElement).classList.contains(
+          'ww-on',
+        ),
+      ).toBe(true);
     });
-  });
-
-  it('ignores keydown events without modifier keys', async () => {
-    vi.resetModules();
-    const { chrome, document, getHandler } = setupMainTest({});
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    const preventDefault = vi.fn();
-    const handler = getHandler('keydown');
-    handler?.({ key: 'c', ctrlKey: false, metaKey: false, shiftKey: true, preventDefault });
-    handler?.({ key: 's', ctrlKey: false, metaKey: false, shiftKey: false, preventDefault });
-
-    expect(preventDefault).not.toHaveBeenCalled();
-  });
-
-  it('copies text on metaKey+Shift+C', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl, getHandler } = setupMainTest({
-      v2: 'hello',
-    });
-    const writeText = vi.fn(() => Promise.resolve());
-    vi.stubGlobal('navigator', { clipboard: { writeText } });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    const handler = getHandler('keydown');
-    const preventDefault = vi.fn();
-    textAreaEl.value = 'meta-copy';
-    handler?.({ key: 'c', ctrlKey: false, metaKey: true, shiftKey: true, preventDefault });
-
-    await Promise.resolve();
-
-    expect(preventDefault).toHaveBeenCalledTimes(1);
-    expect(writeText).toHaveBeenCalledWith('meta-copy');
-  });
-
-  it('saves on metaKey+S', async () => {
-    vi.resetModules();
-    const { chrome, document, textAreaEl, sync, getHandler } = setupMainTest({});
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-
-    textAreaEl.value = 'meta-save';
-    const preventDefault = vi.fn();
-    const handler = getHandler('keydown');
-    handler?.({ key: 's', ctrlKey: false, metaKey: true, shiftKey: false, preventDefault });
-
-    expect(preventDefault).toHaveBeenCalledTimes(1);
-    expect(sync.set).toHaveBeenCalledTimes(1);
-  });
-
-  it('skips button listeners when elements are null', async () => {
-    vi.resetModules();
-    const { chrome, document } = setupMainTest({}, { includeClearButton: false });
-    const originalGetElementById = document.getElementById;
-    document.getElementById = vi.fn((id: string) => {
-      if (id === 'copy' || id === 'export' || id === 'count-mode' || id === 'theme-toggle') {
-        return null;
-      }
-      return originalGetElementById(id);
-    });
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-
-    await import('./main.js');
-  });
-
-  it('applies stored dark theme on load', async () => {
-    vi.resetModules();
-    const { chrome, document } = setupMainTest(
-      {},
-      {
-        localOverrides: {
-          get: vi.fn((_: unknown, callback: (items: Record<string, unknown>) => void) => {
-            callback({ theme: 'dark' });
-          }),
-        },
-      },
-    );
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-    vi.stubGlobal(
-      'matchMedia',
-      vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
-    );
-
-    await import('./main.js');
-
-    expect(document.documentElement.setAttribute).toHaveBeenCalledWith('data-theme', 'dark');
-  });
-
-  it('applies stored light theme on load', async () => {
-    vi.resetModules();
-    const { chrome, document, themeToggleEl } = setupMainTest(
-      {},
-      {
-        localOverrides: {
-          get: vi.fn((_: unknown, callback: (items: Record<string, unknown>) => void) => {
-            callback({ theme: 'light' });
-          }),
-        },
-      },
-    );
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-    vi.stubGlobal(
-      'matchMedia',
-      vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
-    );
-
-    await import('./main.js');
-
-    expect(document.documentElement.setAttribute).toHaveBeenCalledWith('data-theme', 'light');
-    expect(themeToggleEl.textContent).toBe('Dark');
-  });
-
-  it('uses system preference when no theme stored', async () => {
-    vi.resetModules();
-    const { chrome, document } = setupMainTest({});
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-    vi.stubGlobal(
-      'matchMedia',
-      vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
-    );
-
-    await import('./main.js');
-
-    expect(document.documentElement.removeAttribute).toHaveBeenCalledWith('data-theme');
-  });
-
-  it('toggles from dark to light on click', async () => {
-    vi.resetModules();
-    const { chrome, document, themeToggleEl, local, getThemeToggleHandler } = setupMainTest(
-      {},
-      {
-        localOverrides: {
-          get: vi.fn((_: unknown, callback: (items: Record<string, unknown>) => void) => {
-            callback({ theme: 'dark' });
-          }),
-        },
-      },
-    );
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-    vi.stubGlobal(
-      'matchMedia',
-      vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
-    );
-
-    await import('./main.js');
-
-    const handler = getThemeToggleHandler('click');
-    handler?.();
-
-    expect(document.documentElement.setAttribute).toHaveBeenCalledWith('data-theme', 'light');
-    expect(themeToggleEl.textContent).toBe('Dark');
-    expect(local.set).toHaveBeenCalledWith({ theme: 'light' });
-  });
-
-  it('toggles from light to dark on click', async () => {
-    vi.resetModules();
-    const { chrome, document, themeToggleEl, local, getThemeToggleHandler } = setupMainTest(
-      {},
-      {
-        localOverrides: {
-          get: vi.fn((_: unknown, callback: (items: Record<string, unknown>) => void) => {
-            callback({ theme: 'light' });
-          }),
-        },
-      },
-    );
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-    vi.stubGlobal(
-      'matchMedia',
-      vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
-    );
-
-    await import('./main.js');
-
-    const handler = getThemeToggleHandler('click');
-    handler?.();
-
-    expect(document.documentElement.setAttribute).toHaveBeenCalledWith('data-theme', 'dark');
-    expect(themeToggleEl.textContent).toBe('Light');
-    expect(local.set).toHaveBeenCalledWith({ theme: 'dark' });
-  });
-
-  it('logs warning when theme storage fails', async () => {
-    vi.resetModules();
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {
-      // noop for test
-    });
-    const error = new Error('theme save failed');
-    const { chrome, document, getThemeToggleHandler } = setupMainTest(
-      {},
-      {
-        localOverrides: {
-          get: vi.fn((_: unknown, callback: (items: Record<string, unknown>) => void) => {
-            callback({ theme: 'dark' });
-          }),
-          set: vi.fn(() => Promise.reject(error)),
-        },
-      },
-    );
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-    vi.stubGlobal(
-      'matchMedia',
-      vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
-    );
-
-    await import('./main.js');
-
-    const handler = getThemeToggleHandler('click');
-    handler?.();
-
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(warnSpy).toHaveBeenCalledWith(error);
-  });
-
-  it('updates button text based on system preference when no theme stored', async () => {
-    vi.resetModules();
-    const { chrome, document, themeToggleEl } = setupMainTest({});
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-    vi.stubGlobal(
-      'matchMedia',
-      vi.fn((query: string) => ({
-        matches: query === '(prefers-color-scheme: light)',
-        addEventListener: vi.fn(),
-      })),
-    );
-
-    await import('./main.js');
-
-    expect(themeToggleEl.textContent).toBe('Dark');
-  });
-
-  it('responds to system preference change when no explicit theme set', async () => {
-    vi.resetModules();
-    let mediaChangeHandler: (() => void) | undefined;
-    const { chrome, document, themeToggleEl } = setupMainTest({});
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-    vi.stubGlobal(
-      'matchMedia',
-      vi.fn((query: string) => ({
-        matches: query === '(prefers-color-scheme: light)',
-        addEventListener: vi.fn((_event: string, handler: () => void) => {
-          if (query === '(prefers-color-scheme: dark)') {
-            mediaChangeHandler = handler;
-          }
-        }),
-      })),
-    );
-
-    await import('./main.js');
-
-    // System says light, so button should say "Dark"
-    expect(themeToggleEl.textContent).toBe('Dark');
-
-    // Simulate system switching to dark
-    vi.stubGlobal(
-      'matchMedia',
-      vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
-    );
-    mediaChangeHandler?.();
-
-    expect(themeToggleEl.textContent).toBe('Light');
-  });
-
-  it('ignores system preference change when explicit theme is set', async () => {
-    vi.resetModules();
-    let mediaChangeHandler: (() => void) | undefined;
-    const { chrome, document, themeToggleEl } = setupMainTest(
-      {},
-      {
-        localOverrides: {
-          get: vi.fn((_: unknown, callback: (items: Record<string, unknown>) => void) => {
-            callback({ theme: 'light' });
-          }),
-        },
-      },
-    );
-    vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('document', document);
-    vi.stubGlobal(
-      'matchMedia',
-      vi.fn((query: string) => ({
-        matches: false,
-        addEventListener: vi.fn((_event: string, handler: () => void) => {
-          if (query === '(prefers-color-scheme: dark)') {
-            mediaChangeHandler = handler;
-          }
-        }),
-      })),
-    );
-
-    await import('./main.js');
-
-    expect(themeToggleEl.textContent).toBe('Dark');
-
-    // Simulate system preference change — should be ignored since explicit theme is set
-    mediaChangeHandler?.();
-
-    // Theme should still be light (button still says "Dark")
-    expect(document.documentElement.getAttribute()).toBe('light');
   });
 });

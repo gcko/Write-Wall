@@ -10,7 +10,7 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <title>Simple Text Sync</title>
+    <title>Write Wall</title>
     <link
       href="/css/main.css"
       type="text/css"
@@ -19,23 +19,80 @@
     />
   </head>
   <body>
-    <div id="info">
-      <span id="num-chars">0</span>
-      <span id="usage-max">/ 8192 Bytes</span>
-      <span aria-hidden="true">&#183;</span>
-      <span id="last-synced">Synced: --</span>
-      <select id="count-mode" aria-label="Count mode">
-        <option value="bytes">Bytes</option>
-        <option value="chars">Chars</option>
-        <option value="words">Words</option>
-      </select>
-      <button id="export" type="button">Export</button>
-      <button id="copy" type="button">Copy</button>
-      <button id="clear" type="button">Clear</button>
-      <button id="theme-toggle" type="button" aria-label="Toggle theme">Light</button>
+    <div id="wordmark" aria-hidden="true">WRITE WALL</div>
+
+    <div id="scroll">
+      <div id="paper">
+        <div id="pad" role="textbox" aria-multiline="true" aria-label="Write Wall pad"></div>
+      </div>
     </div>
-    <!--suppress HtmlFormInputWithoutLabel -->
-    <textarea id="text" placeholder="Type here... auto-syncs across Chrome."></textarea>
+
+    <div id="status">
+      <div id="actions">
+        <button id="export" type="button">Export</button>
+        <button id="copy" type="button">Copy</button>
+        <button id="clear" type="button">Clear</button>
+        <span aria-hidden="true">&#183;</span>
+      </div>
+      <button id="status-count" type="button" aria-label="Cycle count mode">0 bytes</button>
+      <span aria-hidden="true">&#183;</span>
+      <span id="last-synced">synced --</span>
+      <span aria-hidden="true">&#183;</span>
+      <span id="quota-bar" aria-hidden="true"><span id="quota-fill"></span></span>
+      <span id="quota-pct">0%</span>
+      <span id="near-limit" hidden>approaching sync limit</span>
+    </div>
+
+    <button id="drawer-toggle" type="button" aria-label="Settings" aria-expanded="false">Aa</button>
+
+    <div id="drawer" hidden>
+      <div class="drawer-group">
+        <div class="drawer-title">typeface</div>
+        <div class="drawer-items">
+          <button type="button" data-font="mono">Mono</button>
+          <button type="button" data-font="serif">Serif</button>
+          <button type="button" data-font="sans">Sans</button>
+        </div>
+      </div>
+      <div class="drawer-group">
+        <div class="drawer-title">size</div>
+        <div class="drawer-items">
+          <button id="size-down" type="button" aria-label="Smaller text">&#8722;</button>
+          <span id="size-label" aria-live="polite" role="status">17px</span>
+          <button id="size-up" type="button" aria-label="Larger text">+</button>
+        </div>
+      </div>
+      <div class="drawer-group">
+        <div class="drawer-title">line width</div>
+        <div class="drawer-items">
+          <button type="button" data-width="560">Narrow</button>
+          <button type="button" data-width="680">Medium</button>
+          <button type="button" data-width="820">Wide</button>
+        </div>
+      </div>
+      <div class="drawer-group">
+        <div class="drawer-title">line height</div>
+        <div class="drawer-items">
+          <button type="button" data-lh="1.5">Tight</button>
+          <button type="button" data-lh="1.8">Normal</button>
+          <button type="button" data-lh="2">Open</button>
+        </div>
+      </div>
+      <div class="drawer-group">
+        <div class="drawer-title">theme</div>
+        <div class="drawer-items">
+          <button type="button" data-set-theme="light">Light</button>
+          <button type="button" data-set-theme="dark">Dark</button>
+        </div>
+      </div>
+      <div class="drawer-group">
+        <div class="drawer-title">modes</div>
+        <div class="drawer-items">
+          <button id="mode-focus" type="button" aria-pressed="false">Focus</button>
+          <button id="mode-typewriter" type="button" aria-pressed="false">Typewriter</button>
+        </div>
+      </div>
+    </div>
 
     <!--suppress HtmlUnknownTarget -->
     <script type="module" src="/main.bundle.js"></script>

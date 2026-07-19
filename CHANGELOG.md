@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [3.0.0] - 2026-07-19
+
+### Added
+
+- "Paper" redesign: writing happens on a centered paper column with subtle side borders and a WRITE WALL wordmark
+- Live markdown editing: the caret line shows raw markdown, every other line renders as rich text (headings, bold/italic/strikethrough, inline code, links, blockquotes, task lists with clickable checkboxes, bullet and numbered lists, code fences, horizontal rules)
+- Hidden settings drawer (Aa button): typeface (Mono/Serif/Sans system stacks), font size 13–22px, line width (Narrow/Medium/Wide), line height (Tight/Normal/Open), theme, and modes — all persisted via `chrome.storage.local`
+- Focus mode (dims everything but the current line) and Typewriter mode (keeps the caret vertically centered)
+- Redesigned status bar: word/char/byte count (click to cycle), sync quota meter with percentage, and a near-limit warning above 90% of the 8,192-byte sync quota
+- Export now produces a `write-wall.md` markdown file
+- Action buttons (Export/Copy/Clear) reveal on status-bar hover to keep the canvas clean
+
+### Changed
+
+- The pad stores plain markdown text under the existing `v2` sync key — existing synced text is fully preserved and renders as markdown
+- Theme switching moved from the top-right toggle into the settings drawer
+- Bump version to 3.0.0
+
+### Removed
+
+- The plain `<textarea>` editor and top-right info bar
+
 ## [2.6.0] - 2026-02-07
 
 ### Added

@@ -39,6 +39,37 @@ describe('throttle', () => {
     vi.useRealTimers();
   });
 
+  it('fires a trailing call when invocations were suppressed', () => {
+    vi.useFakeTimers();
+    const callback = vi.fn();
+    const throttled = throttle(callback, 100, { trailing: true });
+
+    throttled();
+    throttled();
+    throttled();
+    expect(callback).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(100);
+    expect(callback).toHaveBeenCalledTimes(2);
+
+    // No further suppressed calls → no extra trailing invocation.
+    vi.advanceTimersByTime(200);
+    expect(callback).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it('does not fire a trailing call without the trailing option', () => {
+    vi.useFakeTimers();
+    const callback = vi.fn();
+    const throttled = throttle(callback, 100);
+
+    throttled();
+    throttled();
+    vi.advanceTimersByTime(300);
+    expect(callback).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
   it('preserves the calling context and arguments', () => {
     const context = {
       total: 0,
