@@ -30,6 +30,12 @@ interface RenderedLine {
 
 const escapeHtml = (text: string): string =>
   text
+    // Strip PUA sentinels used as code-span placeholders to prevent silent data loss.
+    // See renderInline() for context:  and  are used as temporary markers
+    // during inline transform. If user input contains these characters (rare but possible
+    // from pasted font glyphs or accessibility tools), they would match the restore regex
+    // at line 59, causing silent character deletion. This guard ensures such input is safe.
+    .replace(/[]/g, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -39,24 +45,44 @@ const escapeHtml = (text: string): string =>
 const TASK_RE = /^- \[( |x|X)\] (.*)$/;
 const ORDERED_RE = /^(\d+)\. (.*)$/;
 
-// Inline transforms run on escaped text. Code spans are lifted out first so
-// their content is never re-transformed, then restored at the end.
-const renderInline = (text: string): string => {
-  const codeSpans: string[] = [];
-  let out = escapeHtml(text).replace(/`([^`]+)`/g, (_m, code: string) => {
-    codeSpans.push(`<code>${code}</code>`);
-    return `\uE000${codeSpans.length - 1}\uE001`;
-  });
-  out = out
-    .replace(/\*\*([^*]+(?:\*[^*]+)*)\*\*/g, '<strong>$1</strong>')
-    .replace(/~~([^~]+)~~/g, '<del>$1</del>')
-    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    .replace(/_([^_]+)_/g, '<em>$1</em>')
+// Emphasis regex order: *** (bold+em) before ** (bold) before * (em) to avoid
+// partial matches. * and _ require non-space edges; _ additionally requires
+// word boundaries so snake_case identifiers stay literal.
+const applyEmphasis = (text: string): string =>
+  text
+    .replace(/\*\*\*([^*\n]+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    // Bold: allow internal single asterisks for cases like **a *b* c**
+    .replace(/\*\*([^*\n]+(?:\*[^*\n]+)*)\*\*/g, '<strong>$1</strong>')
+    .replace(/~~([^~\n]+?)~~/g, '<del>$1</del>')
+    .replace(/\*((?:[^\s*][^*\n]*?[^\s*])|[^\s*])\*/g, '<em>$1</em>')
     .replace(
-      /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
-      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+      /(^|[^A-Za-z0-9_])_((?:[^\s_][^_\n]*?[^\s_])|[^\s_])_(?=[^A-Za-z0-9_]|$)/g,
+      '$1<em>$2</em>',
     );
-  return out.replace(/\uE000(\d+)\uE001/g, (_m, i: string) => codeSpans[Number(i)] ?? '');
+
+// Inline transforms run on escaped text. Code spans and links are lifted out
+// into slots FIRST \u2014 code so its content is never re-transformed, links so
+// emphasis markers inside URLs (underscores, asterisks) can't corrupt the
+// href \u2014 then emphasis runs, then slots are restored.
+const renderInline = (text: string): string => {
+  const slots: string[] = [];
+  const stash = (html: string): string => {
+    slots.push(html);
+    return `\uE000${slots.length - 1}\uE001`;
+  };
+  let out = escapeHtml(text).replace(/`([^`]+)`/g, (_m, code: string) =>
+    stash(`<code>${code}</code>`),
+  );
+  // URL charset allows one level of balanced parens (wiki-style links).
+  out = out.replace(
+    /\[([^\]]+)\]\((https?:\/\/(?:[^()\s]|\([^()\s]*\))+)\)/g,
+    (_m, label: string, url: string) =>
+      stash(
+        `<a href="${url}" target="_blank" rel="noopener noreferrer">${applyEmphasis(label)}</a>`,
+      ),
+  );
+  out = applyEmphasis(out);
+  return out.replace(/\uE000(\d+)\uE001/g, (_m, i: string) => slots[Number(i)] ?? '');
 };
 
 const renderLine = (line: string, inFence: boolean): RenderedLine => {

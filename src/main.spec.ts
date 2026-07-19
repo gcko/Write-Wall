@@ -56,6 +56,9 @@ interface ChromeMock {
       get: ReturnType<typeof vi.fn>;
       set: ReturnType<typeof vi.fn>;
     };
+    onChanged?: {
+      addListener: ReturnType<typeof vi.fn>;
+    };
   };
 }
 
@@ -88,6 +91,7 @@ const buildChrome = (
       set: vi.fn(() => Promise.resolve()),
     };
   }
+  chromeMock.storage.onChanged = { addListener: vi.fn() };
   return chromeMock;
 };
 
@@ -369,6 +373,86 @@ describe('main', () => {
       await flushMicrotasks();
       expect(warn).toHaveBeenCalled();
       warn.mockRestore();
+    });
+  });
+
+  describe('sync integrity', () => {
+    it('flushes trailing edits made inside the throttle window', async () => {
+      vi.useFakeTimers();
+      const chromeMock = await boot({ v2: 'a' });
+      chromeMock.storage.sync.set.mockClear();
+      typeInActive('ab');
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: 'ab' });
+      typeInActive('abc');
+      typeInActive('abcd');
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(8001);
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: 'abcd' });
+    });
+
+    it('persists a clear immediately even during an open throttle window', async () => {
+      vi.useFakeTimers();
+      const chromeMock = await boot({ v2: 'text' });
+      typeInActive('text more');
+      chromeMock.storage.sync.set.mockClear();
+      (document.getElementById('clear') as HTMLElement).click();
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: '' });
+    });
+
+    it('surfaces sync write failures instead of failing silently', async () => {
+      const chromeMock = await boot({ v2: 'a' });
+      chromeMock.storage.sync.set.mockImplementation(() => Promise.reject(new Error('quota')));
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      typeInActive('ab');
+      await flushMicrotasks();
+      expect(document.getElementById('last-synced')?.textContent).toBe('sync failed');
+      expect(document.getElementById('status-count')?.textContent).toContain('not synced');
+      warn.mockRestore();
+    });
+
+    it('flushes unsynced text on pagehide', async () => {
+      vi.useFakeTimers();
+      const chromeMock = await boot({ v2: 'a' });
+      typeInActive('ab');
+      typeInActive('abc');
+      chromeMock.storage.sync.set.mockClear();
+      window.dispatchEvent(new Event('pagehide'));
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: 'abc' });
+    });
+
+    it('does not write on pagehide when nothing is unsynced', async () => {
+      const chromeMock = await boot({ v2: 'a' });
+      await flushMicrotasks();
+      chromeMock.storage.sync.set.mockClear();
+      window.dispatchEvent(new Event('pagehide'));
+      expect(chromeMock.storage.sync.set).not.toHaveBeenCalled();
+    });
+
+    it('applies remote storage changes when there are no local edits', async () => {
+      const chromeMock = await boot({ v2: 'local' });
+      await flushMicrotasks();
+      const listener = chromeMock.storage.onChanged?.addListener.mock.calls[0]?.[0] as (
+        changes: Record<string, { newValue?: unknown }>,
+        area: string,
+      ) => void;
+      expect(listener).toBeTypeOf('function');
+      listener({ v2: { newValue: 'from another device' } }, 'sync');
+      const pad = document.getElementById('pad') as HTMLElement;
+      expect(pad.textContent).toContain('from another device');
+    });
+
+    it('keeps local unsynced edits when a remote change arrives', async () => {
+      vi.useFakeTimers();
+      const chromeMock = await boot({ v2: 'local' });
+      typeInActive('local x');
+      typeInActive('local xy');
+      const listener = chromeMock.storage.onChanged?.addListener.mock.calls[0]?.[0] as (
+        changes: Record<string, { newValue?: unknown }>,
+        area: string,
+      ) => void;
+      listener({ v2: { newValue: 'remote wins?' } }, 'sync');
+      const pad = document.getElementById('pad') as HTMLElement;
+      expect(pad.textContent).toContain('local xy');
     });
   });
 

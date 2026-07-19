@@ -240,11 +240,247 @@ describe('MarkdownEditor', () => {
     expect(editor.value).toBe('ab');
   });
 
+  const selectInActive = (el: HTMLElement, start: number, end: number) => {
+    const node = el.firstChild as Text;
+    const range = document.createRange();
+    range.setStart(node, start);
+    range.setEnd(node, end);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  };
+
+  it('replaces a selection on Enter instead of duplicating it', () => {
+    const { container, editor } = setup('hello world');
+    editor.setSelectionRange(0);
+    const active = container.children[0] as HTMLElement;
+    selectInActive(active, 3, 8);
+    key(active, 'Enter');
+    expect(editor.value).toBe('hel\nrld');
+  });
+
+  it('deletes a selection on Backspace without merging lines', () => {
+    const { container, editor } = setup('first\nsecond');
+    editor.setSelectionRange(6);
+    const active = container.children[1] as HTMLElement;
+    selectInActive(active, 0, 3);
+    key(active, 'Backspace');
+    expect(editor.value).toBe('first\nond');
+  });
+
+  it('deletes a selection on Delete without merging lines', () => {
+    const { container, editor } = setup('first\nsecond');
+    editor.setSelectionRange(6);
+    const active = container.children[1] as HTMLElement;
+    selectInActive(active, 2, 6);
+    key(active, 'Delete');
+    expect(editor.value).toBe('first\nse');
+  });
+
+  it('resolves offsets across multiple text nodes in the active line', () => {
+    const { container, editor } = setup('abcdef');
+    editor.setSelectionRange(0);
+    const active = container.children[0] as HTMLElement;
+    active.textContent = '';
+    active.appendChild(document.createTextNode('abc'));
+    active.appendChild(document.createTextNode('def'));
+    const range = document.createRange();
+    range.setStart(active.childNodes[1], 2);
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    key(active, 'Enter');
+    expect(editor.value).toBe('abcde\nf');
+  });
+
+  it('activates the end of the document when clicking empty space below', () => {
+    const { container, editor } = setup('one\ntwo\nthree');
+    editor.setSelectionRange(0);
+    container.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(container.children[2].classList.contains('ww-active')).toBe(true);
+    expect(editor.selectionStart).toBe(editor.value.length);
+  });
+
+  it('marks fence delimiters with open and close roles', () => {
+    const { container, editor } = setup('```\ncode\n```\nafter');
+    editor.setSelectionRange(editor.value.length);
+    expect(container.children[0].classList.contains('ww-fence-open')).toBe(true);
+    expect(container.children[2].classList.contains('ww-fence-close')).toBe(true);
+  });
+
+  it('marks both delimiters of an empty fence', () => {
+    const { container, editor } = setup('```\n```\nafter');
+    editor.setSelectionRange(editor.value.length);
+    expect(container.children[0].classList.contains('ww-fence-open')).toBe(true);
+    expect(container.children[1].classList.contains('ww-fence-close')).toBe(true);
+  });
+
+  it('styles the active line as code when inside a fence', () => {
+    const { container, editor } = setup('```\ninside\n```');
+    editor.setSelectionRange(5);
+    expect(container.children[1].classList.contains('ww-active-code')).toBe(true);
+  });
+
+  it('keeps other line elements stable on pure caret moves', () => {
+    const { container, editor } = setup('one\ntwo\nthree\nfour');
+    editor.setSelectionRange(0);
+    const stable = container.children[3];
+    key(container.children[0] as HTMLElement, 'ArrowDown');
+    expect(container.children[3]).toBe(stable);
+  });
+
   it('focus() re-activates the current line', () => {
     const { container, editor, onCaretMove } = setup('abc');
     onCaretMove.mockClear();
     editor.focus();
     expect(container.children[0].classList.contains('ww-active')).toBe(true);
     expect(onCaretMove).toHaveBeenCalled();
+  });
+
+  it('preserves goal column on arrow up/down to lines of different lengths', () => {
+    const { container, editor } = setup('short\nmuch longer line');
+    // Place caret at end of first line (offset 5)
+    editor.setSelectionRange(5);
+    expect(container.children[0].classList.contains('ww-active')).toBe(true);
+    // Arrow down to longer line; caret should try to stay at column 5
+    key(container.children[0] as HTMLElement, 'ArrowDown');
+    expect(container.children[1].classList.contains('ww-active')).toBe(true);
+    expect(editor.selectionStart).toBe(11); // "short\n" + 5 = 11
+    // Arrow down then up should restore position
+    key(container.children[1] as HTMLElement, 'ArrowUp');
+    expect(container.children[0].classList.contains('ww-active')).toBe(true);
+    expect(editor.selectionStart).toBe(5); // back to end of first line
+  });
+
+  it('keyboard toggles task checkbox with Space key', () => {
+    const { container, editor, onInput } = setup('placeholder\n- [x] done task');
+    // Activate first line so second line is rendered with checkbox visible
+    editor.setSelectionRange(0);
+    onInput.mockClear();
+    const checkbox = container.querySelector('.ww-checkbox') as HTMLElement | null;
+    if (checkbox) {
+      checkbox.dispatchEvent(
+        new KeyboardEvent('keydown', { code: 'Space', bubbles: true, cancelable: true }),
+      );
+      expect(editor.value).toContain('- [ ] done task');
+      expect(onInput).toHaveBeenCalled();
+    }
+  });
+
+  it('keyboard toggles task checkbox with Enter key', () => {
+    const { container, editor, onInput } = setup('x\n- [ ] unchecked');
+    // Activate first line so second line is rendered
+    editor.setSelectionRange(0);
+    onInput.mockClear();
+    const checkbox = container.querySelector('.ww-checkbox') as HTMLElement | null;
+    if (checkbox) {
+      checkbox.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+      );
+      expect(editor.value).toContain('- [x] unchecked');
+      expect(onInput).toHaveBeenCalled();
+    }
+  });
+
+  it('handles setSelectionRange beyond document length', () => {
+    const { container, editor } = setup('abc');
+    editor.setSelectionRange(999);
+    expect(container.children[0].classList.contains('ww-active')).toBe(true);
+    expect(editor.selectionStart).toBe(3); // clamped to end
+  });
+
+  it('clamps arrow up/down to first and last lines', () => {
+    const { container, editor } = setup('first\nsecond');
+    editor.setSelectionRange(0);
+    key(container.children[0] as HTMLElement, 'ArrowUp');
+    expect(container.children[0].classList.contains('ww-active')).toBe(true);
+    editor.setSelectionRange(editor.value.length);
+    key(container.children[1] as HTMLElement, 'ArrowDown');
+    expect(container.children[1].classList.contains('ww-active')).toBe(true);
+  });
+
+  it('clamps goal column when moving to a shorter line', () => {
+    const { container, editor } = setup('very long line here\nshort');
+    // Position at end of long line (offset 19)
+    editor.setSelectionRange(19);
+    // Move down to shorter line; should clamp to end of that line (offset 5)
+    key(container.children[0] as HTMLElement, 'ArrowDown');
+    expect(container.children[1].classList.contains('ww-active')).toBe(true);
+    // Caret should be clamped to "short".length = 5
+    const offsetInSecondLine = editor.selectionStart - 20; // "very long line here\n" = 20 chars
+    expect(offsetInSecondLine).toBe(5);
+  });
+
+  it('ignores keydown on checkbox if not from the checkbox itself', () => {
+    const { container, editor, onInput } = setup('x\n- [x] task');
+    editor.setSelectionRange(0);
+    onInput.mockClear();
+    const checkbox = container.querySelector('.ww-checkbox') as HTMLElement | null;
+    if (checkbox) {
+      // Create an event but set a different target
+      const event = new KeyboardEvent('keydown', {
+        code: 'Space',
+        bubbles: true,
+        cancelable: true,
+      });
+      Object.defineProperty(event, 'target', { value: { other: 'element' }, enumerable: true });
+      checkbox.dispatchEvent(event);
+      // Task should not have changed since the event target wasn't the checkbox
+      expect(editor.value).toContain('- [x] task');
+      expect(onInput).not.toHaveBeenCalled();
+    }
+  });
+
+  it('handles multiple arrow key sequences', () => {
+    const { container, editor } = setup('line1\nline2\nline3');
+    editor.setSelectionRange(0);
+    expect(container.children[0].classList.contains('ww-active')).toBe(true);
+    key(container.children[0] as HTMLElement, 'ArrowDown');
+    expect(container.children[1].classList.contains('ww-active')).toBe(true);
+    key(container.children[1] as HTMLElement, 'ArrowDown');
+    expect(container.children[2].classList.contains('ww-active')).toBe(true);
+    key(container.children[2] as HTMLElement, 'ArrowUp');
+    expect(container.children[1].classList.contains('ww-active')).toBe(true);
+  });
+
+  it('handles ArrowLeft at start of line merging with previous line', () => {
+    const { container, editor, onInput } = setup('prev\ncurr');
+    editor.setSelectionRange(5); // start of second line
+    onInput.mockClear();
+    key(container.children[1] as HTMLElement, 'ArrowLeft');
+    expect(container.children[0].classList.contains('ww-active')).toBe(true);
+    expect(editor.selectionStart).toBe(4); // end of first line
+  });
+
+  it('handles ArrowRight at end of line merging with next line', () => {
+    const { container, editor } = setup('curr\nnext');
+    editor.setSelectionRange(4); // end of first line
+    key(container.children[0] as HTMLElement, 'ArrowRight');
+    expect(container.children[1].classList.contains('ww-active')).toBe(true);
+    expect(editor.selectionStart).toBe(5); // start of second line
+  });
+
+  it('restores text from remote storage that differs from current', () => {
+    const { editor } = setup('initial');
+    const newText = 'updated text from sync';
+    editor.value = newText;
+    expect(editor.value).toBe(newText);
+  });
+
+  it('renders code fences with proper open/close markers', () => {
+    const { container, editor } = setup('before\n```\ncode\n```\nafter');
+    editor.setSelectionRange(0);
+    expect(container.children[1].classList.contains('ww-fence-open')).toBe(true);
+    expect(container.children[3].classList.contains('ww-fence-close')).toBe(true);
+  });
+
+  it('activates line within a code fence as ww-active-code', () => {
+    const { container, editor } = setup('```\ncode\n```');
+    // Activate the code line (middle line)
+    editor.setSelectionRange(4);
+    const activeLine = container.children[1] as HTMLElement;
+    expect(activeLine.classList.contains('ww-active')).toBe(true);
+    expect(activeLine.classList.contains('ww-active-code')).toBe(true);
   });
 });

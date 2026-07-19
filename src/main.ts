@@ -71,18 +71,30 @@ const FLASH_MS = 1600;
     }
     if (flashMessage !== '') {
       statusCountEl.textContent = flashMessage;
+      statusCountEl.setAttribute('aria-label', `${flashMessage} — click to cycle count mode`);
       return;
     }
     if (countMode === 'chars') {
-      statusCountEl.textContent = `${editor.value.length} chars`;
+      const charCount = editor.value.length;
+      statusCountEl.textContent = `${charCount} chars`;
+      statusCountEl.setAttribute(
+        'aria-label',
+        `${charCount} characters — click to cycle count mode`,
+      );
       return;
     }
     if (countMode === 'words') {
-      statusCountEl.textContent = `${countWords(editor.value)} words`;
+      const wordCount = countWords(editor.value);
+      statusCountEl.textContent = `${wordCount} words`;
+      statusCountEl.setAttribute('aria-label', `${wordCount} words — click to cycle count mode`);
       return;
     }
     storage.sync.getBytesInUse(null, (inUse) => {
       statusCountEl.textContent = `${inUse} / ${QUOTA_BYTES} B`;
+      statusCountEl.setAttribute(
+        'aria-label',
+        `${inUse} of ${QUOTA_BYTES} bytes — click to cycle count mode`,
+      );
     });
   };
 
@@ -128,18 +140,25 @@ const FLASH_MS = 1600;
     })}`;
   };
 
-  const storeCursorPosition = throttle(() => {
-    storage.local
-      ?.set({
-        [CURSOR_KEY]: {
-          start: editor.selectionStart,
-          end: editor.selectionStart,
-        },
-      })
-      .catch((e: unknown) => {
-        console.warn(e);
-      });
-  }, 500);
+  // Tracks whether the editor holds text that has not reached sync storage.
+  let dirty = false;
+
+  const storeCursorPosition = throttle(
+    () => {
+      storage.local
+        ?.set({
+          [CURSOR_KEY]: {
+            start: editor.selectionStart,
+            end: editor.selectionStart,
+          },
+        })
+        .catch((e: unknown) => {
+          console.warn(e);
+        });
+    },
+    500,
+    { trailing: true },
+  );
 
   const typewriterScroll = (): void => {
     if (!document.body.classList.contains('ww-typewriter')) {
@@ -148,35 +167,44 @@ const FLASH_MS = 1600;
     editor.activeLineElement?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
   };
 
-  const throttledStorageUpdate = throttle(() => {
-    storageObject[STORAGE_KEY] = editor.value;
+  // Shared write path. On failure (most commonly the 8,192-byte per-item
+  // quota) the user gets a visible signal instead of a silent console.warn —
+  // the meter alone can't show it, since getBytesInUse only reports
+  // successfully committed bytes.
+  const writeToSync = (): void => {
+    const written = editor.value;
+    storageObject[STORAGE_KEY] = written;
     storage.sync
       .set(storageObject)
       .then(() => {
+        if (editor.value === written) {
+          dirty = false;
+        }
+        remoteStoredText = written;
         updateUsage();
         updateLastSynced();
       })
       .catch((e: unknown) => {
         console.warn(e);
+        if (lastSyncedEl) {
+          lastSyncedEl.textContent = 'sync failed';
+        }
+        flash('not synced — over the 8,192 byte limit?');
       });
-  }, CHANGE_DELAY);
+  };
+
+  // Trailing edge matters: without it, edits made inside the throttle window
+  // would never sync unless another input arrived later.
+  const throttledStorageUpdate = throttle(writeToSync, CHANGE_DELAY, { trailing: true });
 
   const immediateStorageUpdate = (): void => {
-    storageObject[STORAGE_KEY] = editor.value;
-    storage.sync
-      .set(storageObject)
-      .then(() => {
-        updateUsage();
-        updateLastSynced();
-      })
-      .catch((e: unknown) => {
-        console.warn(e);
-      });
+    writeToSync();
   };
 
   const editor = new MarkdownEditor({
     container: padEl,
     onInput: () => {
+      dirty = true;
       throttledStorageUpdate();
       if (countMode !== 'bytes') {
         countLabel();
@@ -210,8 +238,16 @@ const FLASH_MS = 1600;
     if (sizeLabelEl) {
       sizeLabelEl.textContent = `${settings.size}px`;
     }
-    document.getElementById('mode-focus')?.classList.toggle('ww-on', settings.focus);
-    document.getElementById('mode-typewriter')?.classList.toggle('ww-on', settings.typewriter);
+    const focusBtn = document.getElementById('mode-focus');
+    if (focusBtn) {
+      focusBtn.classList.toggle('ww-on', settings.focus);
+      focusBtn.setAttribute('aria-pressed', settings.focus ? 'true' : 'false');
+    }
+    const typewriterBtn = document.getElementById('mode-typewriter');
+    if (typewriterBtn) {
+      typewriterBtn.classList.toggle('ww-on', settings.typewriter);
+      typewriterBtn.setAttribute('aria-pressed', settings.typewriter ? 'true' : 'false');
+    }
   };
 
   const saveSettings = (patch: Partial<PadSettings>): void => {
@@ -352,6 +388,7 @@ const FLASH_MS = 1600;
     }
     if (event.key === 'Escape' && drawerEl && !drawerEl.hidden) {
       setDrawerOpen(false);
+      drawerToggleEl?.focus();
     }
   });
 
@@ -371,7 +408,10 @@ const FLASH_MS = 1600;
         return;
       }
       editor.value = '';
-      throttledStorageUpdate();
+      // Immediate write: a throttled call could be silently dropped inside an
+      // open throttle window, leaving the old text in sync storage while the
+      // UI reports "cleared".
+      immediateStorageUpdate();
       flash('cleared');
     });
   }
@@ -442,5 +482,37 @@ const FLASH_MS = 1600;
     if (!document.documentElement.getAttribute('data-theme')) {
       removeExplicitTheme();
     }
+  });
+
+  // Best-effort flush of unsynced text when the page goes away or is hidden —
+  // the throttle's trailing edge can't fire after the page is gone.
+  const flushIfDirty = (): void => {
+    if (dirty) {
+      immediateStorageUpdate();
+    }
+  };
+  globalThis.addEventListener?.('pagehide', flushIfDirty);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      flushIfDirty();
+    }
+  });
+
+  // Apply remote edits (another device wrote v2) when there are no local
+  // unsynced changes; with local edits pending, local wins — same conflict
+  // behavior as before, but the common two-device case now stays in sync.
+  storage.onChanged?.addListener?.((changes, areaName) => {
+    if (areaName !== 'sync' || !(STORAGE_KEY in changes)) {
+      return;
+    }
+    const newValue = changes[STORAGE_KEY].newValue;
+    if (typeof newValue !== 'string' || newValue === editor.value || dirty) {
+      return;
+    }
+    remoteStoredText = newValue;
+    storageObject[STORAGE_KEY] = newValue;
+    editor.value = newValue;
+    updateUsage();
+    updateLastSynced();
   });
 })(chrome);

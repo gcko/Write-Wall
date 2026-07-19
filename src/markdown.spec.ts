@@ -64,6 +64,35 @@ describe('renderInline', () => {
     expect(renderInline('<img src=x>')).toBe('&lt;img src=x&gt;');
   });
 
+  it('keeps underscores and asterisks in link URLs intact', () => {
+    expect(renderInline('[docs](http://a.com/a_b_c)')).toContain('href="http://a.com/a_b_c"');
+    expect(renderInline('[x](https://a.com/q?a=*b*)')).toContain('href="https://a.com/q?a=*b*"');
+  });
+
+  it('allows one level of balanced parens in link URLs', () => {
+    expect(renderInline('[wiki](https://en.wikipedia.org/wiki/Foo_(bar))')).toContain(
+      'href="https://en.wikipedia.org/wiki/Foo_(bar)"',
+    );
+  });
+
+  it('renders emphasis inside link labels', () => {
+    expect(renderInline('[**bold** site](https://a.com/)')).toContain(
+      '<strong>bold</strong> site</a>',
+    );
+  });
+
+  it('leaves snake_case identifiers unemphasized', () => {
+    expect(renderInline('use snake_case_names here')).toBe('use snake_case_names here');
+  });
+
+  it('leaves spaced asterisks unemphasized', () => {
+    expect(renderInline('multiply 2 * 3 * 4 now')).toBe('multiply 2 * 3 * 4 now');
+  });
+
+  it('drops user-supplied placeholder sentinel characters safely', () => {
+    expect(renderInline('a `c` b 0 d')).toBe('a <code>c</code> b 0 d');
+  });
+
   it('renders bold containing emphasis', () => {
     expect(renderInline('**a *b* c**')).toBe('<strong>a <em>b</em> c</strong>');
   });

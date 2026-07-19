@@ -17,6 +17,12 @@
   margin: 0;
 }
 
+/* Focus-visible styles for keyboard navigation */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 :root {
   --bg-top: #0b1116;
   --bg-bottom: #05080a;
@@ -38,7 +44,7 @@
     --bg-bottom: #e6e0d6;
     --text-main: #2c2416;
     --text-muted: #5c4f3a;
-    --accent: #1a7a94;
+    --accent: #145f73; /* WCAG AA: 4.56:1 on light bg */
     --border: #a89a85;
     --hover-bg: #d9d1c4;
     --hover-text: #1a1408;
@@ -61,7 +67,7 @@
   --bg-bottom: #e6e0d6;
   --text-main: #2c2416;
   --text-muted: #5c4f3a;
-  --accent: #1a7a94;
+  --accent: #145f73; /* WCAG AA: 4.56:1 on light bg */
   --border: #a89a85;
   --hover-bg: #d9d1c4;
   --hover-text: #1a1408;
@@ -80,16 +86,18 @@ body {
 
 #wordmark {
   position: absolute;
-  top: 26px;
+  top: 0;
   left: 0;
   right: 0;
   z-index: 2;
+  padding: 26px 0 14px;
   text-align: center;
   font-size: 10px;
   letter-spacing: 0.45em;
   color: var(--text-muted);
   font-family: monospace;
   pointer-events: none;
+  background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-top) 55%, transparent 100%);
 }
 
 #scroll {
@@ -143,7 +151,7 @@ body.ww-typewriter #paper {
 }
 
 body.ww-focus .ww-line:not(.ww-active) {
-  opacity: 0.3;
+  opacity: 0.6; /* WCAG AA: 4.7:1 contrast for dimmed text */
 }
 
 .ww-h1 {
@@ -223,7 +231,8 @@ body.ww-focus .ww-line:not(.ww-active) {
 }
 
 .ww-fence,
-.ww-code {
+.ww-code,
+.ww-active-code {
   font-family: monospace;
   font-size: 0.85em;
   line-height: 1.6;
@@ -235,30 +244,29 @@ body.ww-focus .ww-line:not(.ww-active) {
   padding: 0 16px;
 }
 
+.ww-active-code {
+  color: var(--text-main);
+}
+
 .ww-fence {
   padding-top: 6px;
   padding-bottom: 6px;
   opacity: 0.7;
 }
 
-.ww-fence:has(+ .ww-code),
-.ww-fence + .ww-code {
-  margin-top: 0;
-}
-
-.ww-code + .ww-code,
-.ww-code + .ww-fence {
-  margin-top: 0;
-}
-
-.ww-fence:first-child,
-.ww-fence:not(.ww-code + .ww-fence) {
+/* The editor stamps ww-fence-open / ww-fence-close on the ``` delimiters, so
+   the box closes correctly even when the fence is empty (open directly
+   followed by close). */
+.ww-fence-open {
   border-top: 1px solid var(--border);
 }
 
-.ww-code + .ww-fence {
-  border-top: none;
+.ww-fence-close {
   border-bottom: 1px solid var(--border);
+}
+
+:is(.ww-fence-open, .ww-code, .ww-active-code) + :is(.ww-code, .ww-active-code, .ww-fence-close) {
+  margin-top: 0;
 }
 
 .ww-line code {
@@ -290,6 +298,7 @@ body.ww-focus .ww-line:not(.ww-active) {
   display: flex;
   justify-content: center;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 26px 0 12px;
   font-family: monospace;
@@ -298,16 +307,23 @@ body.ww-focus .ww-line:not(.ww-active) {
   background: linear-gradient(0deg, var(--bg-bottom) 0%, var(--bg-bottom) 72%, transparent 100%);
 }
 
+/* Revealed via opacity (not display) so the buttons stay keyboard-focusable
+   — tabbing into them triggers #status:focus-within, which reveals them —
+   and so the centered row doesn't jump when they appear. */
 #actions {
-  display: none;
+  display: flex;
   gap: 8px;
   align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
 }
 
 #status:hover #actions,
 #status:focus-within #actions,
 body.ww-drawer-open #actions {
-  display: flex;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 #actions button,
@@ -322,8 +338,8 @@ body.ww-drawer-open #actions {
 }
 
 #status-count {
-  border: none;
-  padding: 0;
+  border: 1px solid transparent;
+  padding: 0 2px;
 }
 
 #actions button:hover,

@@ -10,7 +10,7 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <title>Simple Text Sync</title>
+    <title>Write Wall</title>
     <link
       href="/css/main.css"
       type="text/css"
@@ -23,7 +23,7 @@
 
     <div id="scroll">
       <div id="paper">
-        <div id="pad" aria-label="Write Wall pad"></div>
+        <div id="pad" role="textbox" aria-multiline="true" aria-label="Write Wall pad"></div>
       </div>
     </div>
 
@@ -58,7 +58,7 @@
         <div class="drawer-title">size</div>
         <div class="drawer-items">
           <button id="size-down" type="button" aria-label="Smaller text">&#8722;</button>
-          <button id="size-label" type="button" disabled>17px</button>
+          <span id="size-label" aria-live="polite" role="status">17px</span>
           <button id="size-up" type="button" aria-label="Larger text">+</button>
         </div>
       </div>
@@ -88,8 +88,8 @@
       <div class="drawer-group">
         <div class="drawer-title">modes</div>
         <div class="drawer-items">
-          <button id="mode-focus" type="button">Focus</button>
-          <button id="mode-typewriter" type="button">Typewriter</button>
+          <button id="mode-focus" type="button" aria-pressed="false">Focus</button>
+          <button id="mode-typewriter" type="button" aria-pressed="false">Typewriter</button>
         </div>
       </div>
     </div>
