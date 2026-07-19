@@ -24,12 +24,12 @@ jobs:
       # This prevents a malicious PR from modifying scripts/coverage-report.cjs
       # to exfiltrate secrets via the pull-requests:write permission.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          node-version: "24"
 
       # Pass workflow_run context as environment variables to avoid
       # shell injection via attacker-controlled branch names.
@@ -58,23 +58,23 @@ jobs:
           echo "number=$PR_NUMBER" >> $GITHUB_OUTPUT
           echo "Found PR #$PR_NUMBER"
 
-      # Download base branch coverage (from latest master push)
+      # Download base branch coverage (from latest main push)
       - name: Download base coverage
-        uses: dawidd6/action-download-artifact@v6
+        uses: dawidd6/action-download-artifact@v21
         continue-on-error: true
         with:
           workflow: ci.yml
-          branch: master
+          branch: main
           name: coverage-main
           path: ./base-coverage/
 
-      # Download PR branch coverage (Node 22 artifact from the triggering run)
+      # Download PR branch coverage (Node 24 artifact from the triggering run)
       - name: Download PR coverage
-        uses: dawidd6/action-download-artifact@v6
+        uses: dawidd6/action-download-artifact@v21
         continue-on-error: true
         with:
           run_id: ${{ github.event.workflow_run.id }}
-          name: coverage-node-22-${{ github.event.workflow_run.id }}
+          name: coverage-node-24-${{ github.event.workflow_run.id }}
           path: ./pr-coverage/
 
       - name: Ensure coverage files exist
@@ -112,13 +112,13 @@ jobs:
 
       - name: Find existing comment
         id: find-comment
-        uses: peter-evans/find-comment@v3
+        uses: peter-evans/find-comment@v4
         with:
           issue-number: ${{ steps.pr.outputs.number }}
           body-includes: "<!-- coverage-report-marker -->"
 
       - name: Post PR comment
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@v5
         with:
           issue-number: ${{ steps.pr.outputs.number }}
           comment-id: ${{ steps.find-comment.outputs.comment-id }}

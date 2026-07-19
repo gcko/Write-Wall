@@ -428,7 +428,7 @@ const FLASH_MS = 1600;
 
   if (drawerToggleEl && drawerEl) {
     drawerToggleEl.addEventListener('click', () => {
-      setDrawerOpen(drawerEl.hidden);
+      setDrawerOpen(Boolean(drawerEl.hidden));
     });
   }
 

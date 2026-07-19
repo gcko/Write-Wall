@@ -422,5 +422,5 @@ class MarkdownEditor {
   }
 }
 
-export { MarkdownEditor };
 export type { EditorOptions };
+export { MarkdownEditor };
