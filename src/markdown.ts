@@ -143,5 +143,5 @@ const toggleTaskLine = (line: string): string | null => {
   return `- [${next}] ${task[2]}`;
 };
 
-export { computeFenceStates, escapeHtml, renderInline, renderLine, toggleTaskLine };
 export type { LineKind, RenderedLine };
+export { computeFenceStates, escapeHtml, renderInline, renderLine, toggleTaskLine };

@@ -1,4 +1,4 @@
-onlyBuiltDependencies:
-  - core-js
-  - unrs-resolver
-  - esbuild
+allowBuilds:
+  esbuild: true
+  core-js: true
+  unrs-resolver: true

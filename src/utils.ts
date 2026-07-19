@@ -41,5 +41,5 @@ const throttle = <Args extends unknown[], This>(
   };
 };
 
-export { throttle };
 export type { ThrottleOptions };
+export { throttle };

@@ -77,6 +77,7 @@ const applySettings = (settings: PadSettings, root: HTMLElement, body: HTMLEleme
   body.classList.toggle('ww-typewriter', settings.typewriter);
 };
 
+export type { PadSettings, Typeface };
 export {
   applySettings,
   clampSize,
@@ -88,4 +89,3 @@ export {
   SIZE_MIN,
   WIDTHS,
 };
-export type { PadSettings, Typeface };
