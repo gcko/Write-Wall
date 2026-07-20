@@ -1,6 +1,6 @@
 {
   "name": "write-wall",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "A simple, sync-able text pad similar to Write Space",
   "license": "CC-BY-SA-4.0",
   "private": true,
