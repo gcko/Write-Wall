@@ -546,4 +546,57 @@ describe('main', () => {
       ).toBe(true);
     });
   });
+
+  describe('active line visibility', () => {
+    const mockScrollViewport = (height: number) => {
+      const scrollEl = document.getElementById('scroll') as HTMLElement;
+      Object.defineProperty(scrollEl, 'clientHeight', { value: height, configurable: true });
+      return scrollEl;
+    };
+
+    const mockActiveLineRect = (top: number, bottom: number) => {
+      activeLine().getBoundingClientRect = () => ({ top, bottom, height: bottom - top }) as DOMRect;
+    };
+
+    it('scrolls down when typing pushes the active line under the status bar', async () => {
+      await boot({ v2: 'abc' });
+      await flushMicrotasks();
+      const scrollEl = mockScrollViewport(800);
+      mockActiveLineRect(750, 780);
+      typeInActive('abcd');
+      // Bottom limit is clientHeight - 140 = 660; overshoot is 780 - 660.
+      expect(scrollEl.scrollTop).toBe(120);
+    });
+
+    it('scrolls up when the active line sits under the wordmark', async () => {
+      await boot({ v2: 'abc' });
+      await flushMicrotasks();
+      const scrollEl = mockScrollViewport(800);
+      scrollEl.scrollTop = 500;
+      mockActiveLineRect(10, 40);
+      typeInActive('abcd');
+      // Top clearance is 72; deficit is 72 - 10.
+      expect(scrollEl.scrollTop).toBe(438);
+    });
+
+    it('leaves scroll alone when the active line is already clear', async () => {
+      await boot({ v2: 'abc' });
+      await flushMicrotasks();
+      const scrollEl = mockScrollViewport(800);
+      scrollEl.scrollTop = 100;
+      mockActiveLineRect(300, 330);
+      typeInActive('abcd');
+      expect(scrollEl.scrollTop).toBe(100);
+    });
+
+    it('defers to typewriter mode centering', async () => {
+      await boot({ v2: 'abc' });
+      await flushMicrotasks();
+      const scrollEl = mockScrollViewport(800);
+      document.body.classList.add('ww-typewriter');
+      mockActiveLineRect(750, 780);
+      typeInActive('abcd');
+      expect(scrollEl.scrollTop).toBe(0);
+    });
+  });
 });

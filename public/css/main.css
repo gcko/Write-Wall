@@ -106,6 +106,13 @@ body {
   overflow: auto;
   display: flex;
   justify-content: center;
+  /* Without this, the default align-items: stretch pins #paper's height to
+     the viewport, so long content overflows past its side borders. */
+  align-items: flex-start;
+  /* Keep native caret scroll-into-view clear of the wordmark and status-bar
+     overlays. */
+  scroll-padding-top: 72px;
+  scroll-padding-bottom: 140px;
 }
 
 #scroll::-webkit-scrollbar {
@@ -115,6 +122,9 @@ body {
 #paper {
   width: 100%;
   max-width: var(--ww-width);
+  /* Fill the viewport (100vh minus the 72px + 96px margins) when content is
+     short, but grow with the content so the side borders never cut off. */
+  min-height: calc(100vh - 168px);
   margin: 72px 0 96px;
   padding: 32px 48px 48px;
   border-left: 1px solid var(--border);

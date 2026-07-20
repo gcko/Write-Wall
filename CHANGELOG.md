@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [3.0.1] - 2026-07-20
+
+### Fixed
+
+- Arrow up/down now moves through the visual rows of a wrapped paragraph instead of skipping to the adjacent text section
+- Side paper borders no longer cut off when the document scrolls past a single viewport
+- Text typed at the bottom of the screen stays visible above the status bar instead of hiding behind it
+- Clicking the empty gap between lines now places focus on the nearest line instead of jumping to the end of the document
+
 ## [3.0.0] - 2026-07-19
 
 ### Added

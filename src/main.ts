@@ -167,6 +167,32 @@ const FLASH_MS = 1600;
     editor.activeLineElement?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
   };
 
+  // Keep the active line inside the band that is clear of the wordmark and
+  // status-bar overlays; the browser's own caret scrolling only brings text
+  // to the viewport edge, where those overlays hide it.
+  const scrollEl = document.getElementById('scroll');
+  const CARET_CLEARANCE_TOP = 72;
+  const CARET_CLEARANCE_BOTTOM = 140;
+  const keepActiveLineVisible = (): void => {
+    if (!scrollEl || document.body.classList.contains('ww-typewriter')) {
+      return;
+    }
+    const lineEl = editor.activeLineElement;
+    if (!lineEl) {
+      return;
+    }
+    const rect = lineEl.getBoundingClientRect();
+    if (rect.height === 0 && rect.bottom === 0) {
+      return; // no layout information available
+    }
+    const bottomLimit = scrollEl.clientHeight - CARET_CLEARANCE_BOTTOM;
+    if (rect.bottom > bottomLimit) {
+      scrollEl.scrollTop += rect.bottom - bottomLimit;
+    } else if (rect.top < CARET_CLEARANCE_TOP) {
+      scrollEl.scrollTop -= CARET_CLEARANCE_TOP - rect.top;
+    }
+  };
+
   // Shared write path. On failure (most commonly the 8,192-byte per-item
   // quota) the user gets a visible signal instead of a silent console.warn —
   // the meter alone can't show it, since getBytesInUse only reports
@@ -210,10 +236,12 @@ const FLASH_MS = 1600;
         countLabel();
       }
       storeCursorPosition();
+      keepActiveLineVisible();
     },
     onCaretMove: () => {
       storeCursorPosition();
       typewriterScroll();
+      keepActiveLineVisible();
     },
   });
 

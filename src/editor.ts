@@ -132,6 +132,25 @@ class MarkdownEditor {
     el.addEventListener('keydown', (event) => {
       this.handleKeydown(event as KeyboardEvent, index, el);
     });
+    // Native caret moves (arrows inside a wrapped line, Home/End) bypass
+    // handleKeydown's interceptions, so re-sync the cached offset afterwards.
+    el.addEventListener('keyup', (event) => {
+      const keyName = (event as KeyboardEvent).key;
+      if (
+        keyName === 'ArrowUp' ||
+        keyName === 'ArrowDown' ||
+        keyName === 'ArrowLeft' ||
+        keyName === 'ArrowRight' ||
+        keyName === 'Home' ||
+        keyName === 'End'
+      ) {
+        this.caretOffset = this.readDomOffset(el);
+        if (keyName !== 'ArrowUp' && keyName !== 'ArrowDown') {
+          this.goalColumn = this.caretOffset;
+        }
+        this.onCaretMove();
+      }
+    });
     el.addEventListener('paste', (event) => {
       this.handlePaste(event as ClipboardEvent, index, el);
     });
@@ -308,6 +327,43 @@ class MarkdownEditor {
     return this.readDomRange(el).start;
   }
 
+  // Rect of the collapsed caret, or null when the environment provides no
+  // selection or no layout information (e.g. jsdom in tests).
+  private caretClientRect(el: HTMLElement): DOMRect | null {
+    const selection = globalThis.getSelection?.();
+    if (!selection || selection.rangeCount === 0) {
+      return null;
+    }
+    const range = selection.getRangeAt(0).cloneRange();
+    range.collapse(true);
+    const rects = typeof range.getClientRects === 'function' ? range.getClientRects() : [];
+    if (rects.length > 0 && rects[0].height > 0) {
+      return rects[0];
+    }
+    // No rect for the collapsed position (empty line): the line box itself
+    // is the caret's row, so first and last row coincide.
+    const fallback = el.getBoundingClientRect();
+    return fallback.height > 0 ? fallback : null;
+  }
+
+  // A wrapped logical line spans several visual rows. Arrow up/down should
+  // only leave the line when the caret sits on the boundary row facing the
+  // move; otherwise the browser's native caret motion walks the wrapped
+  // rows. Without layout information every row counts as a boundary.
+  private caretOnBoundaryRow(el: HTMLElement, edge: 'first' | 'last'): boolean {
+    const caret = this.caretClientRect(el);
+    if (!caret || caret.height === 0) {
+      return true;
+    }
+    const line = el.getBoundingClientRect();
+    if (line.height === 0) {
+      return true;
+    }
+    return edge === 'first'
+      ? caret.top - line.top < caret.height / 2
+      : line.bottom - caret.bottom < caret.height / 2;
+  }
+
   private handleKeydown(event: KeyboardEvent, index: number, el: HTMLElement): void {
     const { start: offset, end } = this.readDomRange(el);
     const hasSelection = end > offset;
@@ -345,14 +401,18 @@ class MarkdownEditor {
       this.onInput();
       return;
     }
-    if (event.key === 'ArrowUp' && index > 0) {
-      event.preventDefault();
-      this.activate(index - 1, offset, true);
+    if (event.key === 'ArrowUp') {
+      if (index > 0 && this.caretOnBoundaryRow(el, 'first')) {
+        event.preventDefault();
+        this.activate(index - 1, offset, true);
+      }
       return;
     }
-    if (event.key === 'ArrowDown' && index < this.lines.length - 1) {
-      event.preventDefault();
-      this.activate(index + 1, offset, true);
+    if (event.key === 'ArrowDown') {
+      if (index < this.lines.length - 1 && this.caretOnBoundaryRow(el, 'last')) {
+        event.preventDefault();
+        this.activate(index + 1, offset, true);
+      }
       return;
     }
     if (event.key === 'ArrowLeft' && offset === 0 && index > 0) {
@@ -384,6 +444,29 @@ class MarkdownEditor {
     this.onInput();
   }
 
+  // Nearest line index for a container-level click at clientY. Clicks in the
+  // margin gap between two lines resolve to whichever line edge is closer;
+  // clicks below the last line resolve to it. Falls back to the last line
+  // when the environment provides no layout information.
+  private lineIndexFromY(y: number): number {
+    const children = this.container.children;
+    if (children.length === 0 || this.container.getBoundingClientRect().height === 0) {
+      return this.lines.length - 1;
+    }
+    for (let i = 0; i < children.length; i++) {
+      const rect = children[i].getBoundingClientRect();
+      if (y > rect.bottom) {
+        continue;
+      }
+      if (y >= rect.top || i === 0) {
+        return i;
+      }
+      const previous = children[i - 1].getBoundingClientRect();
+      return y - previous.bottom <= rect.top - y ? i - 1 : i;
+    }
+    return children.length - 1;
+  }
+
   private handleContainerClick(event: MouseEvent): void {
     const target = event.target as HTMLElement | null;
     if (!target) {
@@ -394,11 +477,12 @@ class MarkdownEditor {
     }
     const lineEl = target.closest('.ww-line') as HTMLElement | null;
     if (!lineEl) {
-      // Click in the empty area below the last line: focus the end of the
-      // document, like a textarea would.
+      // Clicks land on the container itself when they hit the margin gap
+      // between lines or the empty area below the last line. Map the click
+      // to the nearest line instead of assuming end-of-document.
       if (target === this.container) {
-        const last = this.lines.length - 1;
-        this.activate(last, this.lines[last].length);
+        const index = this.lineIndexFromY(event.clientY);
+        this.activate(index, this.lines[index].length);
       }
       return;
     }
