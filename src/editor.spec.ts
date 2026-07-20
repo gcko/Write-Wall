@@ -483,4 +483,192 @@ describe('MarkdownEditor', () => {
     expect(activeLine.classList.contains('ww-active')).toBe(true);
     expect(activeLine.classList.contains('ww-active-code')).toBe(true);
   });
+
+  // ── Visual-row aware arrow navigation (wrapped lines) ─────────
+
+  const rect = (top: number, bottom: number): DOMRect =>
+    ({
+      top,
+      bottom,
+      height: bottom - top,
+      left: 0,
+      right: 0,
+      width: 0,
+      x: 0,
+      y: top,
+    }) as DOMRect;
+
+  // Fake selection whose caret reports the given client rects — jsdom has no
+  // layout, so wrapped-line geometry must be simulated.
+  const stubCaretSelection = (el: HTMLElement, offset: number, caretRects: DOMRect[]) => {
+    const node = el.firstChild ?? el;
+    vi.stubGlobal('getSelection', () => ({
+      rangeCount: 1,
+      getRangeAt: () => ({
+        startContainer: node,
+        startOffset: offset,
+        endContainer: node,
+        endOffset: offset,
+        cloneRange() {
+          return this;
+        },
+        collapse: () => undefined,
+        getClientRects: () => caretRects,
+      }),
+      removeAllRanges: vi.fn(),
+      addRange: vi.fn(),
+    }));
+  };
+
+  const dispatchKey = (el: HTMLElement, keyName: string): KeyboardEvent => {
+    const event = new KeyboardEvent('keydown', {
+      key: keyName,
+      bubbles: true,
+      cancelable: true,
+    });
+    el.dispatchEvent(event);
+    return event;
+  };
+
+  it('keeps the caret inside a wrapped line on ArrowDown from a middle row', () => {
+    const { container, editor } = setup('a long wrapped paragraph\nnext');
+    editor.setSelectionRange(5);
+    const active = container.children[0] as HTMLElement;
+    active.getBoundingClientRect = () => rect(0, 90);
+    stubCaretSelection(active, 5, [rect(30, 45)]);
+    const event = dispatchKey(active, 'ArrowDown');
+    expect(event.defaultPrevented).toBe(false);
+    expect(container.children[0].classList.contains('ww-active')).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it('leaves a wrapped line on ArrowDown from its last visual row', () => {
+    const { container, editor } = setup('a long wrapped paragraph\nnext');
+    editor.setSelectionRange(5);
+    const active = container.children[0] as HTMLElement;
+    active.getBoundingClientRect = () => rect(0, 90);
+    stubCaretSelection(active, 20, [rect(62, 88)]);
+    const event = dispatchKey(active, 'ArrowDown');
+    expect(event.defaultPrevented).toBe(true);
+    expect(container.children[1].classList.contains('ww-active')).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps the caret inside a wrapped line on ArrowUp from a middle row', () => {
+    const { container, editor } = setup('prev\na long wrapped paragraph');
+    editor.setSelectionRange(10);
+    const active = container.children[1] as HTMLElement;
+    active.getBoundingClientRect = () => rect(100, 190);
+    stubCaretSelection(active, 5, [rect(130, 145)]);
+    const event = dispatchKey(active, 'ArrowUp');
+    expect(event.defaultPrevented).toBe(false);
+    expect(container.children[1].classList.contains('ww-active')).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it('leaves a wrapped line on ArrowUp from its first visual row', () => {
+    const { container, editor } = setup('prev\na long wrapped paragraph');
+    editor.setSelectionRange(10);
+    const active = container.children[1] as HTMLElement;
+    active.getBoundingClientRect = () => rect(100, 190);
+    stubCaretSelection(active, 2, [rect(100, 126)]);
+    const event = dispatchKey(active, 'ArrowUp');
+    expect(event.defaultPrevented).toBe(true);
+    expect(container.children[0].classList.contains('ww-active')).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it('treats a line without caret rects as a single visual row', () => {
+    const { container, editor } = setup('one\ntwo');
+    editor.setSelectionRange(5);
+    const active = container.children[1] as HTMLElement;
+    active.getBoundingClientRect = () => rect(0, 30);
+    stubCaretSelection(active, 0, []);
+    const event = dispatchKey(active, 'ArrowUp');
+    expect(event.defaultPrevented).toBe(true);
+    expect(container.children[0].classList.contains('ww-active')).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  // ── Click-to-nearest-line mapping ─────────────────────────────
+
+  const mockLineRects = (container: HTMLElement, rects: DOMRect[], containerHeight = 500) => {
+    container.getBoundingClientRect = () => rect(0, containerHeight);
+    Array.from(container.children).forEach((child, i) => {
+      (child as HTMLElement).getBoundingClientRect = () => rects[i];
+    });
+  };
+
+  const clickAt = (container: HTMLElement, clientY: number) => {
+    container.dispatchEvent(new MouseEvent('click', { bubbles: true, clientY }));
+  };
+
+  it('activates the closer line when clicking the margin gap between lines', () => {
+    const { container, editor } = setup('one\ntwo\nthree');
+    editor.setSelectionRange(0);
+    const rects = [rect(0, 30), rect(60, 90), rect(120, 150)];
+    mockLineRects(container, rects);
+    clickAt(container, 40); // gap: 10px below line 0, 20px above line 1
+    expect(container.children[0].classList.contains('ww-active')).toBe(true);
+    expect(editor.selectionStart).toBe(3);
+
+    mockLineRects(container, rects);
+    clickAt(container, 55); // gap: 25px below line 0, 5px above line 1
+    expect(container.children[1].classList.contains('ww-active')).toBe(true);
+    expect(editor.selectionStart).toBe(7);
+  });
+
+  it('activates the line whose box contains a container-level click', () => {
+    const { container, editor } = setup('one\ntwo\nthree');
+    editor.setSelectionRange(0);
+    mockLineRects(container, [rect(0, 30), rect(60, 90), rect(120, 150)]);
+    clickAt(container, 75);
+    expect(container.children[1].classList.contains('ww-active')).toBe(true);
+  });
+
+  it('activates the first line when clicking above it', () => {
+    const { container, editor } = setup('one\ntwo');
+    editor.setSelectionRange(editor.value.length);
+    mockLineRects(container, [rect(20, 50), rect(80, 110)]);
+    clickAt(container, 5);
+    expect(container.children[0].classList.contains('ww-active')).toBe(true);
+  });
+
+  it('activates the end of the document when clicking below the last line', () => {
+    const { container, editor } = setup('one\ntwo\nthree');
+    editor.setSelectionRange(0);
+    mockLineRects(container, [rect(0, 30), rect(60, 90), rect(120, 150)]);
+    clickAt(container, 400);
+    expect(container.children[2].classList.contains('ww-active')).toBe(true);
+    expect(editor.selectionStart).toBe(editor.value.length);
+  });
+
+  // ── Caret offset re-sync after native caret movement ─────────
+
+  it('re-syncs the cached caret offset on keyup after native movement keys', () => {
+    const { container, editor, onCaretMove } = setup('hello world');
+    editor.setSelectionRange(0);
+    const active = container.children[0] as HTMLElement;
+    // Simulate the browser having moved the caret natively to offset 5.
+    const range = document.createRange();
+    range.setStart(active.firstChild as Text, 5);
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    onCaretMove.mockClear();
+    active.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight', bubbles: true }));
+    expect(editor.selectionStart).toBe(5);
+    expect(onCaretMove).toHaveBeenCalled();
+  });
+
+  it('ignores keyup from non-movement keys', () => {
+    const { container, editor, onCaretMove } = setup('hello');
+    editor.setSelectionRange(2);
+    const active = container.children[0] as HTMLElement;
+    onCaretMove.mockClear();
+    active.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', bubbles: true }));
+    expect(onCaretMove).not.toHaveBeenCalled();
+    expect(editor.selectionStart).toBe(2);
+  });
 });
