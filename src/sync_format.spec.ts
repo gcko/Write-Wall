@@ -51,6 +51,7 @@ import {
   ITEM_MARGIN_BYTES,
   ITEM_QUOTA_BYTES,
   MARKER,
+  MAX_CHUNKS,
   META_KEY,
   packDocument,
   type SyncMeta,
@@ -115,6 +116,26 @@ describe('packDocument', () => {
   it('throws DocumentTooLargeError past the total-quota ceiling', () => {
     expect(() => packDocument('z'.repeat(120000), 1, WRITER)).toThrow(DocumentTooLargeError);
   });
+
+  it('meters meta bytes in total budget (near ceiling)', () => {
+    const text = 'x'.repeat(95000); // near but safe
+    const payload = packDocument(text, 1, WRITER);
+    let totalBytes = 0;
+    for (const [key, value] of Object.entries(payload)) {
+      if (typeof value === 'string') {
+        totalBytes += chromeItemBytes(key, value);
+      } else {
+        // Meta: count as key + stringJsonBytes of serialized object
+        totalBytes += META_KEY.length + (stringJsonBytes(JSON.stringify(value)) - 2);
+      }
+    }
+    expect(totalBytes).toBeLessThanOrEqual(ITEM_QUOTA_BYTES * MAX_CHUNKS);
+  });
+
+  it('throws when payload with meta exceeds total quota', () => {
+    // Document that would fit chunks but meta pushes over ceiling
+    expect(() => packDocument('y'.repeat(101300), 1, WRITER)).toThrow(DocumentTooLargeError);
+  });
 });
 
 describe('assembleDocument', () => {
@@ -135,6 +156,30 @@ describe('assembleDocument', () => {
   it('reports legacy when meta is absent', () => {
     expect(assembleDocument({ v2: 'old text' })).toEqual({ state: 'legacy', text: 'old text' });
     expect(assembleDocument({})).toEqual({ state: 'legacy', text: '' });
+  });
+
+  it('reports incoherent when meta is present but malformed', () => {
+    // Small payload with malformed meta
+    const badMeta1 = { v2: 'small', v2m: { v: 2 } };
+    expect(assembleDocument(badMeta1).state).toBe('incoherent');
+    const badMeta2 = { v2: 'small', v2m: { v: 1, rev: 'not-a-number' } };
+    expect(assembleDocument(badMeta2).state).toBe('incoherent');
+
+    // Sharded payload with malformed meta
+    const shardedBad = {
+      v2: 'head' + MARKER,
+      v2x_0: '1\u0000chunk',
+      v2m: { v: 1, rev: 1, writerId: 'x', chunks: 1, len: 8, hash: 0 }, // missing fields or bad types
+    };
+    if (
+      typeof shardedBad.v2m === 'object' &&
+      shardedBad.v2m !== null &&
+      Object.keys(shardedBad.v2m).length > 0
+    ) {
+      // Manually break one property
+      (shardedBad.v2m as Record<string, unknown>).rev = 'bad';
+      expect(assembleDocument(shardedBad).state).toBe('incoherent');
+    }
   });
 
   it('reports incoherent when a chunk is missing or from another generation', () => {

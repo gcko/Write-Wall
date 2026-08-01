@@ -127,6 +127,11 @@ const packDocument = (text: string, rev: number, writerId: string): SyncPayload 
     index += 1;
   }
   meta.chunks = index;
+  const metaBytes = META_KEY.length + (stringJsonBytes(JSON.stringify(meta)) - 2);
+  totalBytes += metaBytes;
+  if (totalBytes > SYNC_QUOTA_BYTES - TOTAL_RESERVE_BYTES) {
+    throw new DocumentTooLargeError();
+  }
   payload[META_KEY] = meta;
   return payload;
 };
@@ -157,8 +162,11 @@ type AssembleResult =
 const assembleDocument = (items: Record<string, unknown>): AssembleResult => {
   const metaRaw = items[META_KEY];
   const head = items[HEAD_KEY];
-  if (!isMeta(metaRaw)) {
+  if (metaRaw === undefined) {
     return { state: 'legacy', text: typeof head === 'string' ? head : '' };
+  }
+  if (!isMeta(metaRaw)) {
+    return { state: 'incoherent' };
   }
   if (typeof head !== 'string') {
     return { state: 'incoherent' };
