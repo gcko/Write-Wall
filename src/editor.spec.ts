@@ -672,3 +672,103 @@ describe('MarkdownEditor', () => {
     expect(editor.selectionStart).toBe(2);
   });
 });
+
+describe('MarkdownEditor line patching', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('patches only changed lines instead of rebuilding all', () => {
+    const { container, editor } = setup('alpha\nbravo\ncharlie');
+    const untouched = container.children[2];
+    const changed = container.children[1];
+    editor.applyExternal('alpha\nBRAVO\ncharlie');
+    expect(editor.value).toBe('alpha\nBRAVO\ncharlie');
+    expect(container.children[2]).toBe(untouched);
+    expect(container.children[1]).not.toBe(changed);
+    expect(container.children[1].textContent).toBe('BRAVO');
+  });
+
+  it('leaves the DOM untouched when the text is identical', () => {
+    const { container, editor } = setup('same\ntext');
+    const nodes = Array.from(container.children);
+    editor.applyExternal('same\ntext');
+    expect(Array.from(container.children)).toEqual(nodes);
+  });
+
+  it('handles line insertion and removal', () => {
+    const { container, editor } = setup('one\ntwo');
+    editor.applyExternal('one\nmid\ntwo');
+    expect(editor.value).toBe('one\nmid\ntwo');
+    expect(container.children).toHaveLength(3);
+    editor.applyExternal('one');
+    expect(editor.value).toBe('one');
+    expect(container.children).toHaveLength(1);
+  });
+
+  it('reindexes retained lines after an insertion', () => {
+    const { container, editor } = setup('head\n- [ ] task');
+    editor.applyExternal('head\nNEW\n- [ ] task');
+    expect((container.children[2] as HTMLElement).dataset.index).toBe('2');
+    const checkbox = container.querySelector('.ww-checkbox') as HTMLElement;
+    checkbox.dispatchEvent(
+      new KeyboardEvent('keydown', { code: 'Space', bubbles: true, cancelable: true }),
+    );
+    expect(editor.value).toBe('head\nNEW\n- [x] task');
+  });
+
+  it('refreshes retained lines whose fence state changed', () => {
+    const { container, editor } = setup('a\nb\nc');
+    editor.applyExternal('```\nb\nc');
+    expect(container.children[1].className).toContain('ww-code');
+    expect(container.children[2].className).toContain('ww-code');
+  });
+
+  it('refreshes retained fence delimiters whose role flipped', () => {
+    const { container, editor } = setup('x\n```code\ny');
+    editor.applyExternal('```\n```code\ny');
+    expect(container.children[1].classList.contains('ww-fence-close')).toBe(true);
+    expect(container.children[1].classList.contains('ww-fence-open')).toBe(false);
+  });
+
+  it('falls back to a full render when the DOM and the model disagree', () => {
+    const { container, editor } = setup('one\ntwo');
+    container.removeChild(container.children[0]);
+    editor.applyExternal('three\nfour');
+    expect(container.children).toHaveLength(2);
+    expect(container.children[1].textContent).toBe('four');
+  });
+
+  it('preserves the absolute caret offset across an external apply', () => {
+    const { editor } = setup('first\nsecond');
+    editor.setSelectionRange(8); // line 'second', offset 2
+    editor.applyExternal('CHANGED\nsecond');
+    expect(editor.selectionStart).toBe(8); // same absolute offset, remapped
+  });
+
+  it('keeps the active line editable when it sits inside the replaced window', () => {
+    const { container, editor } = setup('one\ntwo\nthree');
+    editor.setSelectionRange(5); // line 'two', offset 1
+    editor.applyExternal('one\nTWO\nthree');
+    const active = container.children[1] as HTMLElement;
+    expect(active.classList.contains('ww-active')).toBe(true);
+    expect(active.getAttribute('contenteditable')).toBe('plaintext-only');
+    expect(active.textContent).toBe('TWO');
+  });
+
+  it('clamps the caret when the document shrinks', () => {
+    const { editor } = setup('long line here');
+    editor.setSelectionRange(14);
+    editor.applyExternal('ab');
+    expect(editor.selectionStart).toBeLessThanOrEqual(2);
+  });
+
+  it('clamps the active line when the value setter shrinks the document', () => {
+    const { container, editor } = setup('one\ntwo\nthree');
+    editor.setSelectionRange(9); // line 'three'
+    editor.value = 'solo';
+    expect(editor.value).toBe('solo');
+    expect(container.children).toHaveLength(1);
+    expect(container.children[0].classList.contains('ww-active')).toBe(true);
+  });
+});
