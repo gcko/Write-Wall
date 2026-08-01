@@ -57,18 +57,149 @@ const fnv1a = (text: string): number => {
   return hash;
 };
 
+interface SyncMeta {
+  v: 1;
+  rev: number;
+  writerId: string;
+  chunks: number;
+  len: number;
+  hash: number;
+}
+
+type SyncPayload = Record<string, string | SyncMeta>;
+
+class DocumentTooLargeError extends Error {
+  constructor() {
+    super('document too large for sync storage (~95 KB ceiling)');
+    this.name = 'DocumentTooLargeError';
+  }
+}
+
+const ITEM_BUDGET = ITEM_QUOTA_BYTES - ITEM_MARGIN_BYTES;
+
+// Largest code-point-aligned prefix length of `text` such that
+// prefix + suffix fits ITEM_BUDGET for `key`. Monotonic, so binary search.
+const splitPoint = (key: string, text: string, prefixBytes: number, suffix: string): number => {
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = lo + Math.ceil((hi - lo) / 2);
+    const bytes = prefixBytes + chromeItemBytes(key, text.slice(0, mid) + suffix);
+    if (bytes <= ITEM_BUDGET) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  const code = text.charCodeAt(lo - 1);
+  return code >= 0xd800 && code <= 0xdbff && lo < text.length ? lo - 1 : lo;
+};
+
+const packDocument = (text: string, rev: number, writerId: string): SyncPayload => {
+  const meta: SyncMeta = { v: 1, rev, writerId, chunks: 0, len: text.length, hash: fnv1a(text) };
+  if (chromeItemBytes(HEAD_KEY, text) <= ITEM_BUDGET) {
+    return { [HEAD_KEY]: text, [META_KEY]: meta };
+  }
+  const headLen = splitPoint(HEAD_KEY, text, 0, MARKER);
+  const head = text.slice(0, headLen) + MARKER;
+  const payload: SyncPayload = { [HEAD_KEY]: head };
+  let totalBytes = chromeItemBytes(HEAD_KEY, head);
+  const revPrefix = `${rev}\u0000`;
+  const revPrefixBytes = stringJsonBytes(revPrefix) - 2; // exclude double-counted quotes
+  let rest = text.slice(headLen);
+  let index = 0;
+  while (rest.length > 0) {
+    if (index >= MAX_CHUNKS) {
+      throw new DocumentTooLargeError();
+    }
+    const key = `${CHUNK_KEY_PREFIX}${index}`;
+    const take = splitPoint(key, rest, revPrefixBytes, '');
+    if (take === 0) {
+      throw new DocumentTooLargeError(); // cannot make progress (pathological input)
+    }
+    const value = revPrefix + rest.slice(0, take);
+    totalBytes += chromeItemBytes(key, value);
+    if (totalBytes > SYNC_QUOTA_BYTES - TOTAL_RESERVE_BYTES) {
+      throw new DocumentTooLargeError();
+    }
+    payload[key] = value;
+    rest = rest.slice(take);
+    index += 1;
+  }
+  meta.chunks = index;
+  payload[META_KEY] = meta;
+  return payload;
+};
+
+const stripMarker = (head: string): string =>
+  head.endsWith(MARKER) ? head.slice(0, -MARKER.length) : head;
+
+const isMeta = (value: unknown): value is SyncMeta => {
+  const m = value as SyncMeta | null;
+  return (
+    typeof m === 'object' &&
+    m !== null &&
+    m.v === 1 &&
+    typeof m.rev === 'number' &&
+    typeof m.writerId === 'string' &&
+    typeof m.chunks === 'number' &&
+    typeof m.len === 'number' &&
+    typeof m.hash === 'number'
+  );
+};
+
+type AssembleResult =
+  | { state: 'legacy'; text: string }
+  | { state: 'coherent'; text: string; meta: SyncMeta }
+  | { state: 'incoherent' }
+  | { state: 'mismatch'; meta: SyncMeta; headText: string };
+
+const assembleDocument = (items: Record<string, unknown>): AssembleResult => {
+  const metaRaw = items[META_KEY];
+  const head = items[HEAD_KEY];
+  if (!isMeta(metaRaw)) {
+    return { state: 'legacy', text: typeof head === 'string' ? head : '' };
+  }
+  if (typeof head !== 'string') {
+    return { state: 'incoherent' };
+  }
+  const pieces: string[] = [];
+  for (let i = 0; i < metaRaw.chunks; i++) {
+    const raw = items[`${CHUNK_KEY_PREFIX}${i}`];
+    if (typeof raw !== 'string') {
+      return { state: 'incoherent' };
+    }
+    const sep = raw.indexOf('\u0000');
+    if (sep === -1 || Number(raw.slice(0, sep)) !== metaRaw.rev) {
+      return { state: 'incoherent' };
+    }
+    pieces.push(raw.slice(sep + 1));
+  }
+  const text = stripMarker(head) + pieces.join('');
+  if (text.length !== metaRaw.len || fnv1a(text) !== metaRaw.hash) {
+    return { state: 'mismatch', meta: metaRaw, headText: stripMarker(head) };
+  }
+  return { state: 'coherent', text, meta: metaRaw };
+};
+
+export type { AssembleResult, SyncMeta, SyncPayload };
 export {
+  assembleDocument,
   CHUNK_KEY_PREFIX,
   chromeItemBytes,
+  DocumentTooLargeError,
   fnv1a,
   HEAD_KEY,
   ITEM_MARGIN_BYTES,
   ITEM_QUOTA_BYTES,
+  isMeta,
   LEGACY_KEY,
   MARKER,
   MAX_CHUNKS,
   META_KEY,
+  packDocument,
   SYNC_QUOTA_BYTES,
   stringJsonBytes,
+  stripMarker,
   TOTAL_RESERVE_BYTES,
 };
