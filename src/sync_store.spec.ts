@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { assembleDocument, fnv1a, packDocument } from './sync_format.js';
+import { assembleDocument, fnv1a, MARKER, packDocument, stripMarker } from './sync_format.js';
 import { type SyncStatus, SyncStore } from './sync_store.js';
 import { FakeSyncWorld } from './test/fake_chrome_storage.js';
 
@@ -156,6 +156,22 @@ describe('SyncStore.start recovery paths', () => {
     expect(await h.store.start()).toBe('');
     expect(h.statuses.at(-1)?.kind).toBe('sync-incomplete');
   });
+
+  it('strips the truncation marker from the head fallback when no backup exists', async () => {
+    const h = harness();
+    const big = 'd'.repeat(20000);
+    await h.device.sync.set(packDocument(big, 4, 'other-device'));
+    // The head is marker-bearing; a malformed meta makes the doc incoherent.
+    await h.device.sync.set({ v2m: { v: 2 } });
+    const stored = await h.device.sync.get('v2');
+    const rawHead = stored.v2 as string;
+    expect(rawHead.endsWith(MARKER)).toBe(true);
+    const recovered = await h.store.start();
+    expect(h.statuses.at(-1)?.kind).toBe('sync-incomplete');
+    expect(recovered).toBe(stripMarker(rawHead));
+    expect(recovered.includes(MARKER)).toBe(false);
+    expect(recovered).toBe(big.slice(0, recovered.length));
+  });
 });
 
 describe('SyncStore backups and writerId', () => {
@@ -185,9 +201,18 @@ describe('SyncStore backups and writerId', () => {
   it('treats a timestamp-less backup slot as oldest', async () => {
     const h = harness();
     await h.store.start();
+    vi.setSystemTime(1000);
+    await h.store.backupNow('one'); // -> backup_0
+    vi.setSystemTime(2000);
+    await h.store.backupNow('two'); // -> backup_1
     await h.device.local.set({ backup_2: { text: 'no timestamp' } });
     vi.setSystemTime(5000);
     await h.store.backupNow('stamped');
+    const slots = await h.device.local.get(['backup_0', 'backup_1', 'backup_2']);
+    // The slot with no 'at' is the oldest, so it must be the one overwritten.
+    expect(slots.backup_2).toMatchObject({ text: 'stamped', at: 5000 });
+    expect(slots.backup_0).toMatchObject({ text: 'one', at: 1000 });
+    expect(slots.backup_1).toMatchObject({ text: 'two', at: 2000 });
     expect(await h.store.readNewestBackup()).toBe('stamped');
   });
 

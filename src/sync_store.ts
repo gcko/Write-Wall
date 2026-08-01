@@ -16,6 +16,7 @@ import {
   packDocument,
   type SyncMeta,
   type SyncPayload,
+  stripMarker,
 } from './sync_format.js';
 
 type Changes = Record<string, { oldValue?: unknown; newValue?: unknown }>;
@@ -114,7 +115,9 @@ class SyncStore {
     const backup = await this.readNewestBackup();
     if (backup != null) return backup;
     const head = items[HEAD_KEY];
-    return typeof head === 'string' ? head : '';
+    // Strip the truncation marker: it is a display artefact of sharding, and
+    // leaving it in would let continued editing bake it into the document.
+    return typeof head === 'string' ? stripMarker(head) : '';
   }
 
   async write(text: string): Promise<boolean> {
