@@ -29,6 +29,7 @@ const SETTINGS_KEY = 'settings';
 const COUNT_MODE_KEY = 'countMode';
 const NEAR_LIMIT_PCT = 80;
 const FLASH_MS = 1600;
+const COUNT_DEBOUNCE_MS = 250;
 
 /* global chrome:readonly */
 ((chrome) => {
@@ -241,6 +242,13 @@ const FLASH_MS = 1600;
 
   const throttledBackup = throttle(mirrorToBackup, BACKUP_MIRROR_MS, { trailing: true });
 
+  // Re-counting on every keystroke walks the whole document; at typing speed
+  // that is the most expensive thing in the input path. The leading edge keeps
+  // the label responsive and the trailing edge lands the final count, so a
+  // burst costs two counts instead of one per key. Every other caller (mode
+  // toggle, load, status updates) still counts immediately.
+  const debouncedCountLabel = throttle(countLabel, COUNT_DEBOUNCE_MS, { trailing: true });
+
   const editor = new MarkdownEditor({
     container: padEl,
     onInput: () => {
@@ -251,7 +259,7 @@ const FLASH_MS = 1600;
       throttledStorageUpdate();
       throttledBackup();
       if (countMode !== 'bytes') {
-        countLabel();
+        debouncedCountLabel();
       }
       storeCursorPosition();
       keepActiveLineVisible();

@@ -334,6 +334,22 @@ describe('main', () => {
       expect(document.getElementById('status-count')?.textContent).toBe('3 words');
     });
 
+    it('debounces the word count during rapid typing', async () => {
+      vi.useFakeTimers();
+      await boot({ v2: 'a' });
+      const countEl = document.getElementById('status-count') as HTMLElement;
+      const relabel = vi.spyOn(countEl, 'setAttribute');
+      typeInActive('a b');
+      typeInActive('a b c');
+      typeInActive('a b c d');
+      // The burst is coalesced: only the leading keystroke recounts, so the
+      // label still shows that first count and the work ran once, not thrice.
+      expect(relabel).toHaveBeenCalledTimes(1);
+      expect(countEl.textContent).toBe('2 words');
+      await vi.advanceTimersByTimeAsync(250);
+      expect(countEl.textContent).toBe('4 words');
+    });
+
     it('cycles count modes on click and persists the mode', async () => {
       const chromeMock = await boot({ v2: 'one two' });
       const countEl = document.getElementById('status-count') as HTMLElement;
