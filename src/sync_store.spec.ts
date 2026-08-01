@@ -282,3 +282,127 @@ describe('SyncStore.write error propagation', () => {
     vi.resetModules();
   });
 });
+
+describe('SyncStore remote changes', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  const twoDevices = async () => {
+    const world = new FakeSyncWorld();
+    const a = harness(world);
+    const b = harness(world);
+    await a.store.start();
+    await b.store.start();
+    return { world, a, b };
+  };
+
+  it('applies a coherent remote write after the settle window', async () => {
+    const { world, a, b } = await twoDevices();
+    a.setText('from device A');
+    await a.store.write('from device A');
+    world.deliver(b.device);
+    expect(b.docs.filter(([, o]) => o === 'remote')).toHaveLength(0); // not yet settled
+    await vi.advanceTimersByTimeAsync(300);
+    expect(b.docs.at(-1)).toEqual(['from device A', 'remote']);
+  });
+
+  it('never applies a torn delivery, then applies once completed', async () => {
+    const { world, a, b } = await twoDevices();
+    const big = 'a'.repeat(20000);
+    a.setText(big);
+    await a.store.write(big);
+    world.deliver(b.device, ['v2', 'v2m']); // chunks missing
+    await vi.advanceTimersByTimeAsync(300);
+    expect(b.docs.filter(([, o]) => o === 'remote')).toHaveLength(0);
+    world.deliver(b.device); // chunks arrive
+    await vi.advanceTimersByTimeAsync(300);
+    expect(b.docs.at(-1)?.[0]).toBe(big);
+  });
+
+  it('blocks writes and reports sync-incomplete when torn state persists', async () => {
+    const { world, a, b } = await twoDevices();
+    const big = 'c'.repeat(20000);
+    a.setText(big);
+    await a.store.write(big);
+    world.deliver(b.device, ['v2m']); // meta only, chunks never arrive
+    await vi.advanceTimersByTimeAsync(300); // settle: incoherent
+    await vi.advanceTimersByTimeAsync(5000); // retry re-read: still incoherent
+    expect(b.statuses.at(-1)?.kind).toBe('sync-incomplete');
+    expect(await b.store.write('typed while torn')).toBe(false);
+    world.deliver(b.device); // remaining chunks arrive -> coherent again
+    await vi.advanceTimersByTimeAsync(300);
+    expect(await b.store.write('typed after recovery')).toBe(true);
+  });
+
+  it('ignores its own write echo', async () => {
+    const h = harness();
+    await h.store.start();
+    h.setText('self');
+    await h.store.write('self'); // fake fires local onChanged synchronously
+    await vi.advanceTimersByTimeAsync(300);
+    expect(h.docs.filter(([, o]) => o === 'remote')).toHaveLength(0);
+  });
+
+  it('keeps local text while dirty', async () => {
+    const { world, a, b } = await twoDevices();
+    b.setDirty(true);
+    a.setText('remote update');
+    await a.store.write('remote update');
+    world.deliver(b.device);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(b.docs.filter(([, o]) => o === 'remote')).toHaveLength(0);
+  });
+
+  it('applies a recovered document once when the retry read beats a queued settle', async () => {
+    const { world, a, b } = await twoDevices();
+    const big = 'e'.repeat(20000);
+    a.setText(big);
+    await a.store.write(big);
+    world.deliver(b.device, ['v2m']); // meta only: torn
+    await vi.advanceTimersByTimeAsync(300); // settle -> incoherent, retry armed at +5000
+    await vi.advanceTimersByTimeAsync(4800); // just short of the retry
+    world.deliver(b.device); // storage is coherent now, and a settle is queued
+    await vi.advanceTimersByTimeAsync(500); // retry fires first, then the queued settle
+    expect(b.docs.filter(([, o]) => o === 'remote')).toHaveLength(1);
+  });
+
+  it('disarms the retry read once a settle resolves the torn state', async () => {
+    const { world, a, b } = await twoDevices();
+    const big = 'f'.repeat(20000);
+    a.setText(big);
+    await a.store.write(big);
+    world.deliver(b.device, ['v2m']); // meta only: torn
+    await vi.advanceTimersByTimeAsync(300); // settle -> incoherent, retry armed at +5000
+    b.setText('text typed on B');
+    const stale = world.createDevice();
+    await stale.sync.set({ v2: 'stale head edit' });
+    world.deliver(b.device); // stale head + A's chunks -> mismatch, so B republishes
+    await vi.advanceTimersByTimeAsync(300);
+    const settled = b.docs.length;
+    await vi.advanceTimersByTimeAsync(6000); // the superseded retry must not fire
+    expect(b.docs.length).toBe(settled);
+    expect(b.statuses.filter((s) => s.kind === 'sync-incomplete')).toHaveLength(0);
+  });
+
+  it('protects the tail from a stale-client head overwrite', async () => {
+    const { world, a, b } = await twoDevices();
+    const big = 'd'.repeat(20000);
+    a.setText(big);
+    await a.store.write(big);
+    world.deliver(b.device);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(b.docs.at(-1)?.[0]).toBe(big);
+    // Simulate a pre-upgrade client: writes v2 alone, no rev bump.
+    const stale = world.createDevice();
+    await stale.sync.set({ v2: 'stale head edit' });
+    world.deliver(b.device);
+    await vi.advanceTimersByTimeAsync(300);
+    // B re-published the full doc instead of adopting the truncation.
+    const items = await b.device.sync.get(null);
+    const meta = items.v2m as { rev: number };
+    expect(meta.rev).toBeGreaterThan(2);
+    expect(b.statuses.some((s) => s.kind === 'republished')).toBe(true);
+    expect(b.docs.at(-1)?.[0]).toBe(big); // document unchanged locally
+    // and a backup of the pre-conflict doc exists
+    expect(await b.store.readNewestBackup()).toBe(big);
+  });
+});

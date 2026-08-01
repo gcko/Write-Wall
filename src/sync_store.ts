@@ -60,6 +60,12 @@ class SyncStore {
   private rev = 0;
   private writerId = '';
   private blocked = false;
+  // Keys seen via onChanged since the last settle. A remote update arrives as
+  // one or more batches; only the union of `known` and `overlay` is a document
+  // candidate. `undefined` records a deletion.
+  private readonly overlay = new Map<string, unknown>();
+  private settleTimer: ReturnType<typeof setTimeout> | undefined;
+  private retryTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(options: SyncStoreOptions) {
     this.options = { settleMs: 300, incoherentRetryMs: 5000, ...options };
@@ -149,13 +155,120 @@ class SyncStore {
     return true;
   }
 
-  // Task 5 replaces these stubs with real remote-change handling.
-  handleChanges(_changes: Changes, _areaName: string): void {
-    // no-op until Task 5
+  handleChanges(changes: Changes, areaName: string): void {
+    if (areaName !== 'sync') return;
+    let touched = false;
+    for (const [key, change] of Object.entries(changes)) {
+      if (!DOC_KEY_PATTERN.test(key)) continue;
+      touched = true;
+      if ('newValue' in change && change.newValue !== undefined) {
+        this.overlay.set(key, change.newValue);
+      } else {
+        this.overlay.set(key, undefined); // deletion
+      }
+    }
+    if (!touched) return;
+    clearTimeout(this.settleTimer);
+    this.settleTimer = setTimeout(() => {
+      void this.settle();
+    }, this.options.settleMs);
   }
 
   noteLocalEdit(): void {
-    // no-op until Task 5
+    this.overlay.clear();
+    clearTimeout(this.settleTimer);
+    this.settleTimer = undefined;
+  }
+
+  private candidateItems(): Record<string, unknown> {
+    const candidate: Record<string, unknown> = { ...this.known };
+    for (const [key, value] of this.overlay) {
+      if (value === undefined) {
+        delete candidate[key];
+      } else {
+        candidate[key] = value;
+      }
+    }
+    return candidate;
+  }
+
+  private async settle(): Promise<void> {
+    this.settleTimer = undefined;
+    // Any settle outcome supersedes a retry armed by an earlier one; the
+    // incoherent branch below re-arms it.
+    clearTimeout(this.retryTimer);
+    this.retryTimer = undefined;
+    const candidate = this.candidateItems();
+    const result = assembleDocument(candidate);
+    if (result.state === 'coherent') {
+      this.overlay.clear();
+      this.known = candidate;
+      const wasBlocked = this.blocked;
+      this.blocked = false;
+      const isEcho = result.meta.writerId === this.writerId && result.meta.rev === this.rev;
+      if (!isEcho) {
+        this.rev = Math.max(this.rev, result.meta.rev);
+        if (!this.options.isDirty()) {
+          this.options.onDocument(result.text, 'remote');
+        }
+      }
+      if (wasBlocked) {
+        this.options.onStatus({ kind: 'synced' });
+        this.options.onWritable?.();
+      }
+      return;
+    }
+    if (result.state === 'mismatch') {
+      // Coherent key-set, failed integrity: a stale (pre-upgrade) client
+      // overwrote v2. Protect the tail: back up, then republish our full doc.
+      const current = this.options.getText();
+      await this.backupNow(current);
+      this.overlay.clear();
+      this.rev = Math.max(this.rev, result.meta.rev);
+      this.blocked = false;
+      const written = await this.write(current);
+      if (written) this.options.onStatus({ kind: 'republished' });
+      return;
+    }
+    if (result.state === 'legacy') {
+      // Meta deleted remotely (should not happen; meta is never deleted).
+      // Treat like mismatch: republish over it.
+      const current = this.options.getText();
+      await this.backupNow(current);
+      this.overlay.clear();
+      this.blocked = false;
+      await this.write(current);
+      return;
+    }
+    // Incoherent: wait for more batches, then re-read once, then block.
+    this.retryTimer = setTimeout(() => {
+      void this.retryRead();
+    }, this.options.incoherentRetryMs);
+  }
+
+  private async retryRead(): Promise<void> {
+    this.retryTimer = undefined;
+    const items = await this.options.storage.sync.get(null);
+    const result = assembleDocument(items);
+    if (result.state === 'coherent') {
+      // Storage already reflects every delivered batch, so a settle still
+      // queued for those batches would only re-apply this same document.
+      clearTimeout(this.settleTimer);
+      this.settleTimer = undefined;
+      this.overlay.clear();
+      this.known = { ...items };
+      const wasBlocked = this.blocked;
+      this.blocked = false;
+      this.rev = Math.max(this.rev, result.meta.rev);
+      if (!this.options.isDirty()) {
+        this.options.onDocument(result.text, 'remote');
+      }
+      if (wasBlocked) this.options.onWritable?.();
+      this.options.onStatus({ kind: 'synced' });
+      return;
+    }
+    this.blocked = true;
+    this.options.onStatus({ kind: 'sync-incomplete' });
   }
 
   async backupNow(text: string): Promise<void> {
