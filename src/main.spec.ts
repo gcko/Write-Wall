@@ -9,8 +9,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { packDocument } from './sync_format.js';
+import { type FakeChromeStorage, FakeSyncWorld } from './test/fake_chrome_storage.js';
 
 const PAGE = `
+  <div id="banner" role="alert" hidden>
+    <span id="banner-text"></span>
+    <button id="banner-restore" type="button" hidden>restore backup</button>
+    <button id="banner-dismiss" type="button" aria-label="dismiss">x</button>
+  </div>
   <div id="wordmark">WRITE WALL</div>
   <div id="scroll"><div id="paper"><div id="pad"></div></div></div>
   <div id="status">
@@ -46,7 +53,10 @@ const PAGE = `
 interface ChromeMock {
   storage: {
     sync: {
+      QUOTA_BYTES: number;
+      QUOTA_BYTES_PER_ITEM: number;
       MAX_WRITE_OPERATIONS_PER_HOUR: number;
+      MAX_WRITE_OPERATIONS_PER_MINUTE: number;
       get: ReturnType<typeof vi.fn>;
       set: ReturnType<typeof vi.fn>;
       remove: ReturnType<typeof vi.fn>;
@@ -55,6 +65,7 @@ interface ChromeMock {
     local?: {
       get: ReturnType<typeof vi.fn>;
       set: ReturnType<typeof vi.fn>;
+      remove: ReturnType<typeof vi.fn>;
     };
     onChanged?: {
       addListener: ReturnType<typeof vi.fn>;
@@ -62,8 +73,10 @@ interface ChromeMock {
   };
 }
 
+// Call-assertion harness: the storage areas answer but never retain anything.
+// Any test that needs storage to actually behave uses `bootWithFake` instead.
 const buildChrome = (
-  syncItems: Record<string, string | undefined> = {},
+  syncItems: Record<string, unknown> = {},
   localItems: Record<string, unknown> = {},
   options: { bytesInUse?: number; includeLocal?: boolean } = {},
 ): ChromeMock => {
@@ -71,47 +84,120 @@ const buildChrome = (
   const chromeMock: ChromeMock = {
     storage: {
       sync: {
+        QUOTA_BYTES: 102400,
+        QUOTA_BYTES_PER_ITEM: 8192,
         MAX_WRITE_OPERATIONS_PER_HOUR: 1800,
-        get: vi.fn((_keys: unknown, cb: (items: Record<string, string | undefined>) => void) => {
-          cb(syncItems);
+        MAX_WRITE_OPERATIONS_PER_MINUTE: 120,
+        get: vi.fn((_keys: unknown, cb?: (items: Record<string, unknown>) => void) => {
+          cb?.(syncItems);
+          return Promise.resolve(syncItems);
         }),
         set: vi.fn(() => Promise.resolve()),
         remove: vi.fn(() => Promise.resolve()),
-        getBytesInUse: vi.fn((_keys: unknown, cb: (inUse: number) => void) => {
-          cb(bytesInUse);
+        getBytesInUse: vi.fn((_keys: unknown, cb?: (inUse: number) => void) => {
+          cb?.(bytesInUse);
+          return Promise.resolve(bytesInUse);
         }),
       },
     },
   };
   if (includeLocal) {
     chromeMock.storage.local = {
-      get: vi.fn((_keys: unknown, cb: (items: Record<string, unknown>) => void) => {
-        cb(localItems);
+      get: vi.fn((_keys: unknown, cb?: (items: Record<string, unknown>) => void) => {
+        cb?.(localItems);
+        return Promise.resolve(localItems);
       }),
       set: vi.fn(() => Promise.resolve()),
+      remove: vi.fn(() => Promise.resolve()),
     };
   }
   chromeMock.storage.onChanged = { addListener: vi.fn() };
   return chromeMock;
 };
 
-const boot = async (
-  syncItems: Record<string, string | undefined> = {},
-  localItems: Record<string, unknown> = {},
-  options: { bytesInUse?: number; includeLocal?: boolean } = {},
-) => {
+// Startup is promise-chained now (writer id, read, migrate, publish), so the
+// module is only settled once its microtask chain has drained. Timer-free so
+// it works identically under fake timers.
+const flushPromises = async (ticks = 60): Promise<void> => {
+  for (let i = 0; i < ticks; i++) {
+    await Promise.resolve();
+  }
+};
+
+const resetPage = (): void => {
   document.body.innerHTML = PAGE;
   document.documentElement.removeAttribute('data-theme');
   document.body.className = '';
-  const chromeMock = buildChrome(syncItems, localItems, options);
-  vi.stubGlobal('chrome', chromeMock);
+};
+
+const loadMain = async (storage: unknown): Promise<void> => {
+  vi.stubGlobal('chrome', { storage });
   vi.resetModules();
   await import('./main.js');
+  await flushPromises();
+};
+
+const boot = async (
+  syncItems: Record<string, unknown> = {},
+  localItems: Record<string, unknown> = {},
+  options: { bytesInUse?: number; includeLocal?: boolean } = {},
+) => {
+  resetPage();
+  const chromeMock = buildChrome(syncItems, localItems, options);
+  await loadMain(chromeMock.storage);
   return chromeMock;
+};
+
+// Stateful harness: a real (fake) sync world, so sharding, meta, quota
+// accounting, and cross-device delivery all behave.
+const bootWithFake = async (
+  syncItems: Record<string, unknown> = {},
+  localItems: Record<string, unknown> = {},
+) => {
+  const world = new FakeSyncWorld();
+  const device = world.createDevice();
+  if (Object.keys(syncItems).length > 0) {
+    await device.sync.set(syncItems);
+  }
+  if (Object.keys(localItems).length > 0) {
+    await device.local.set(localItems);
+  }
+  resetPage();
+  await loadMain(device);
+  return { world, device };
+};
+
+const WRITER_ID = 'other-device';
+
+const bootTwoDeviceFake = async (seed = 'shared start') => {
+  const world = new FakeSyncWorld();
+  const writer = world.createDevice();
+  const reader = world.createDevice();
+  await writer.sync.set(packDocument(seed, 1, WRITER_ID));
+  world.deliver(reader);
+  resetPage();
+  await loadMain(reader);
+  return { world, writer, reader };
+};
+
+const writerWrites = async (
+  writer: FakeChromeStorage,
+  text: string,
+  rev: number,
+): Promise<void> => {
+  await writer.sync.set(packDocument(text, rev, WRITER_ID));
 };
 
 const pad = () => document.getElementById('pad') as HTMLElement;
 const activeLine = () => document.querySelector('.ww-active') as HTMLElement;
+
+const editorText = () =>
+  [...pad().querySelectorAll('.ww-line')].map((el) => el.textContent ?? '').join('\n');
+
+const bannerText = () => document.getElementById('banner-text')?.textContent ?? '';
+
+const quotaPct = () =>
+  Number((document.getElementById('quota-pct')?.textContent ?? '0%').replace('%', ''));
 
 const typeInActive = (text: string) => {
   const el = activeLine();
@@ -120,6 +206,10 @@ const typeInActive = (text: string) => {
 };
 
 const flushMicrotasks = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+// Sync payloads now carry meta alongside the head, so assertions match on the
+// head text rather than the whole object.
+const wrote = (text: string) => expect.objectContaining({ v2: text });
 
 describe('main', () => {
   beforeEach(() => {
@@ -146,7 +236,7 @@ describe('main', () => {
 
     it('migrates the legacy text key to v2 and removes it', async () => {
       const chromeMock = await boot({ text: 'legacy words' });
-      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: 'legacy words' });
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith(wrote('legacy words'));
       expect(chromeMock.storage.sync.remove).toHaveBeenCalledWith('text');
     });
 
@@ -189,7 +279,7 @@ describe('main', () => {
     it('writes editor content to sync storage on input', async () => {
       const chromeMock = await boot({ v2: 'start' });
       typeInActive('start more');
-      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: 'start more' });
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith(wrote('start more'));
       await flushMicrotasks();
       expect(document.getElementById('last-synced')?.textContent).toMatch(/^synced \d/);
     });
@@ -200,7 +290,7 @@ describe('main', () => {
       document.dispatchEvent(
         new KeyboardEvent('keydown', { key: 's', metaKey: true, cancelable: true }),
       );
-      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: 'abc' });
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith(wrote('abc'));
     });
 
     it('persists the cursor position', async () => {
@@ -225,7 +315,7 @@ describe('main', () => {
       countEl.click();
       expect(countEl.textContent).toBe('7 chars');
       countEl.click();
-      expect(countEl.textContent).toBe('100 / 8192 B');
+      expect(countEl.textContent).toBe('100 / 102400 B');
       countEl.click();
       expect(countEl.textContent).toBe('2 words');
       expect(chromeMock.storage.local?.set).toHaveBeenCalledWith({ countMode: 'chars' });
@@ -236,18 +326,24 @@ describe('main', () => {
       expect(document.getElementById('status-count')?.textContent).toBe('3 chars');
     });
 
-    it('renders quota percentage and fill width', async () => {
-      await boot({ v2: 'x' }, {}, { bytesInUse: 4096 });
+    it('renders quota percentage and fill width against the 100 KB area', async () => {
+      await boot({ v2: 'x' }, {}, { bytesInUse: 51200 });
       expect(document.getElementById('quota-pct')?.textContent).toBe('50%');
       expect((document.getElementById('quota-fill') as HTMLElement).style.width).toBe('50%');
       expect((document.getElementById('near-limit') as HTMLElement).hidden).toBe(true);
     });
 
-    it('warns when approaching the sync limit', async () => {
+    it('no longer treats the old 8,192-byte item cap as the limit', async () => {
       await boot({ v2: 'x' }, {}, { bytesInUse: 7900 });
+      expect(document.getElementById('quota-pct')?.textContent).toBe('8%');
+      expect((document.getElementById('near-limit') as HTMLElement).hidden).toBe(true);
+    });
+
+    it('warns when approaching the sync limit', async () => {
+      await boot({ v2: 'x' }, {}, { bytesInUse: 82000 });
       const nearLimit = document.getElementById('near-limit') as HTMLElement;
       expect(nearLimit.hidden).toBe(false);
-      expect(nearLimit.textContent).toContain('292 B left');
+      expect(nearLimit.textContent).toContain('20400 B left');
     });
   });
 
@@ -305,7 +401,7 @@ describe('main', () => {
     it('clears the pad after confirmation', async () => {
       const chromeMock = await boot({ v2: 'delete me' });
       (document.getElementById('clear') as HTMLElement).click();
-      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: '' });
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith(wrote(''));
     });
 
     it('keeps text when the clear confirmation is declined', async () => {
@@ -327,16 +423,17 @@ describe('main', () => {
       vi.stubGlobal('chrome', chromeMock);
       vi.resetModules();
       await import('./main.js');
+      await flushPromises();
       typeInActive('hi there!');
-      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: 'hi there!' });
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith(wrote('hi there!'));
     });
 
     it('skips the count label refresh while in bytes mode', async () => {
       await boot({ v2: 'x' }, { countMode: 'bytes' });
       const countEl = document.getElementById('status-count') as HTMLElement;
-      expect(countEl.textContent).toBe('100 / 8192 B');
+      expect(countEl.textContent).toBe('100 / 102400 B');
       typeInActive('xy');
-      expect(countEl.textContent).toBe('100 / 8192 B');
+      expect(countEl.textContent).toBe('100 / 102400 B');
     });
 
     it('follows system theme changes when no explicit theme is set', async () => {
@@ -382,12 +479,12 @@ describe('main', () => {
       const chromeMock = await boot({ v2: 'a' });
       chromeMock.storage.sync.set.mockClear();
       typeInActive('ab');
-      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: 'ab' });
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith(wrote('ab'));
       typeInActive('abc');
       typeInActive('abcd');
       expect(chromeMock.storage.sync.set).toHaveBeenCalledTimes(1);
       await vi.advanceTimersByTimeAsync(8001);
-      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: 'abcd' });
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith(wrote('abcd'));
     });
 
     it('throttles sync writes to at least 4 seconds', async () => {
@@ -426,7 +523,7 @@ describe('main', () => {
       typeInActive('text more');
       chromeMock.storage.sync.set.mockClear();
       (document.getElementById('clear') as HTMLElement).click();
-      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: '' });
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith(wrote(''));
     });
 
     it('surfaces sync write failures instead of failing silently', async () => {
@@ -436,7 +533,9 @@ describe('main', () => {
       typeInActive('ab');
       await flushMicrotasks();
       expect(document.getElementById('last-synced')?.textContent).toBe('sync failed');
-      expect(document.getElementById('status-count')?.textContent).toContain('not synced');
+      // Data events live in the persistent banner, never in the 1.6s flash.
+      expect(bannerText()).toContain('not synced');
+      expect(document.getElementById('status-count')?.textContent).not.toContain('not synced');
       warn.mockRestore();
     });
 
@@ -447,7 +546,7 @@ describe('main', () => {
       typeInActive('abc');
       chromeMock.storage.sync.set.mockClear();
       window.dispatchEvent(new Event('pagehide'));
-      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: 'abc' });
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith(wrote('abc'));
     });
 
     it('does not write on pagehide when nothing is unsynced', async () => {
@@ -458,31 +557,70 @@ describe('main', () => {
       expect(chromeMock.storage.sync.set).not.toHaveBeenCalled();
     });
 
-    it('applies remote storage changes when there are no local edits', async () => {
-      const chromeMock = await boot({ v2: 'local' });
-      await flushMicrotasks();
-      const listener = chromeMock.storage.onChanged?.addListener.mock.calls[0]?.[0] as (
-        changes: Record<string, { newValue?: unknown }>,
-        area: string,
-      ) => void;
-      expect(listener).toBeTypeOf('function');
-      listener({ v2: { newValue: 'from another device' } }, 'sync');
-      const pad = document.getElementById('pad') as HTMLElement;
-      expect(pad.textContent).toContain('from another device');
+    it('applies a coherent remote change through applyExternal', async () => {
+      vi.useFakeTimers();
+      const { world, writer, reader } = await bootTwoDeviceFake();
+      await writerWrites(writer, 'from elsewhere', 2);
+      world.deliver(reader);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(editorText()).toBe('from elsewhere');
     });
 
     it('keeps local unsynced edits when a remote change arrives', async () => {
       vi.useFakeTimers();
-      const chromeMock = await boot({ v2: 'local' });
+      const { world, writer, reader } = await bootTwoDeviceFake();
       typeInActive('local x');
       typeInActive('local xy');
-      const listener = chromeMock.storage.onChanged?.addListener.mock.calls[0]?.[0] as (
-        changes: Record<string, { newValue?: unknown }>,
-        area: string,
-      ) => void;
-      listener({ v2: { newValue: 'remote wins?' } }, 'sync');
-      const pad = document.getElementById('pad') as HTMLElement;
-      expect(pad.textContent).toContain('local xy');
+      await writerWrites(writer, 'remote wins?', 2);
+      world.deliver(reader);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(editorText()).toContain('local xy');
+    });
+  });
+
+  describe('sharded sync integration', () => {
+    it('boots a legacy v2 user unchanged and publishes meta', async () => {
+      const { device } = await bootWithFake({ v2: 'my old wall' });
+      expect(editorText()).toBe('my old wall');
+      const items = await device.sync.get(null);
+      expect(items.v2).toBe('my old wall');
+      expect(items.v2m).toMatchObject({ chunks: 0, rev: 1 });
+    });
+
+    it('shows the quota meter against 102,400 bytes', async () => {
+      await bootWithFake({ v2: 'x'.repeat(5000) });
+      // ~5 KB of ~100 KB is ~5%, not the old ~61% of 8,192.
+      expect(quotaPct()).toBeLessThanOrEqual(6);
+    });
+
+    it('shards a document past the old 8,192-byte item cap', async () => {
+      vi.useFakeTimers();
+      const { device } = await bootWithFake({});
+      typeInActive('y'.repeat(20000));
+      await vi.advanceTimersByTimeAsync(4000);
+      const items = await device.sync.get(null);
+      expect(items.v2m).toMatchObject({ len: 20000 });
+      expect((items.v2m as { chunks: number }).chunks).toBeGreaterThan(0);
+      expect(bannerText()).toBe('');
+    });
+
+    it('surfaces too-large through the banner, not the flash', async () => {
+      vi.useFakeTimers();
+      await bootWithFake({});
+      typeInActive('x'.repeat(120000));
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(bannerText()).toMatch(/too large/i);
+      expect(document.getElementById('banner')?.hidden).toBe(false);
+      expect(document.getElementById('last-synced')?.textContent).toBe('sync failed');
+    });
+
+    it('mirrors edits to a local backup the banner can restore', async () => {
+      vi.useFakeTimers();
+      const { device } = await bootWithFake({ v2: 'original' });
+      typeInActive('original plus more');
+      await vi.advanceTimersByTimeAsync(1);
+      const backups = await device.local.get(['backup_0', 'backup_1', 'backup_2']);
+      expect(backups.backup_0).toMatchObject({ text: 'original plus more' });
     });
   });
 
