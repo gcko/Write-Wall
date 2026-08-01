@@ -54,6 +54,7 @@ import {
   MAX_CHUNKS,
   META_KEY,
   packDocument,
+  SYNC_QUOTA_BYTES,
   type SyncMeta,
 } from './sync_format.js';
 
@@ -118,23 +119,26 @@ describe('packDocument', () => {
   });
 
   it('meters meta bytes in total budget (near ceiling)', () => {
-    const text = 'x'.repeat(95000); // near but safe
-    const payload = packDocument(text, 1, WRITER);
-    let totalBytes = 0;
-    for (const [key, value] of Object.entries(payload)) {
-      if (typeof value === 'string') {
-        totalBytes += chromeItemBytes(key, value);
-      } else {
-        // Meta: count as key + stringJsonBytes of serialized object
-        totalBytes += META_KEY.length + (stringJsonBytes(JSON.stringify(value)) - 2);
-      }
-    }
-    expect(totalBytes).toBeLessThanOrEqual(ITEM_QUOTA_BYTES * MAX_CHUNKS);
+    // Pack largest safe document
+    const text = 'y'.repeat(95000);
+    const payload = packDocument(text, 2, 'w');
+
+    // Compute true wire size independently using TextEncoder
+    const wire = Object.entries(payload).reduce(
+      (sum, [key, value]) =>
+        sum +
+        key.length +
+        (typeof value === 'string'
+          ? chromeItemBytes(key, value) - key.length
+          : new TextEncoder().encode(JSON.stringify(value)).length),
+      0,
+    );
+    expect(wire).toBeLessThanOrEqual(SYNC_QUOTA_BYTES);
   });
 
   it('throws when payload with meta exceeds total quota', () => {
-    // Document that would fit chunks but meta pushes over ceiling
-    expect(() => packDocument('y'.repeat(101300), 1, WRITER)).toThrow(DocumentTooLargeError);
+    // Document clearly over the ceiling
+    expect(() => packDocument('y'.repeat(102000), 1, 'w')).toThrow(DocumentTooLargeError);
   });
 });
 

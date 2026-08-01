@@ -127,7 +127,9 @@ const packDocument = (text: string, rev: number, writerId: string): SyncPayload 
     index += 1;
   }
   meta.chunks = index;
-  const metaBytes = META_KEY.length + (stringJsonBytes(JSON.stringify(meta)) - 2);
+  // Exact for SyncMeta: numbers plus a UUID writerId contain no characters
+  // Chromium's WriteJson escapes differently from JSON.stringify.
+  const metaBytes = META_KEY.length + new TextEncoder().encode(JSON.stringify(meta)).length;
   totalBytes += metaBytes;
   if (totalBytes > SYNC_QUOTA_BYTES - TOTAL_RESERVE_BYTES) {
     throw new DocumentTooLargeError();
