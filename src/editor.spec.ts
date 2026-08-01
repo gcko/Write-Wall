@@ -27,6 +27,36 @@ const key = (el: HTMLElement, keyName: string) => {
   el.dispatchEvent(new KeyboardEvent('keydown', { key: keyName, bubbles: true, cancelable: true }));
 };
 
+const editables = (container: HTMLElement) =>
+  Array.from(container.children).filter((el) =>
+    el.hasAttribute('contenteditable'),
+  ) as HTMLElement[];
+
+// Invariant after any patch: exactly one editable node, it carries ww-active,
+// it sits at `activeIndex`, and typing into it writes back to the line its
+// dataset.index names — never to another line.
+const expectSingleCoherentEditable = (
+  container: HTMLElement,
+  editor: MarkdownEditor,
+  activeIndex: number,
+) => {
+  expect(container.querySelectorAll('.ww-active')).toHaveLength(1);
+  const editable = editables(container);
+  expect(editable).toHaveLength(1);
+  for (const el of editable) {
+    expect(el.classList.contains('ww-active')).toBe(true);
+    expect(el.dataset.index).toBe(String(activeIndex));
+    const index = Number(el.dataset.index);
+    const before = editor.value.split('\n');
+    const sentinel = `EDITED_${index}`;
+    el.textContent = sentinel;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    const expected = before.slice();
+    expected[index] = sentinel;
+    expect(editor.value.split('\n')).toEqual(expected);
+  }
+};
+
 describe('MarkdownEditor', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -770,5 +800,32 @@ describe('MarkdownEditor line patching', () => {
     expect(editor.value).toBe('solo');
     expect(container.children).toHaveLength(1);
     expect(container.children[0].classList.contains('ww-active')).toBe(true);
+  });
+
+  it('rebuilds the orphaned active node when lines are inserted above it', () => {
+    const { container, editor } = setup('x\ny\nACTIVE_OLD\nz');
+    editor.setSelectionRange(9); // line 'ACTIVE_OLD', offset 5
+    editor.applyExternal('w1\nw2\nx\ny\nACTIVE_OLD\nz');
+    expect(editor.value).toBe('w1\nw2\nx\ny\nACTIVE_OLD\nz');
+    // Absolute offset 9 lands on 'y' in the new document.
+    expectSingleCoherentEditable(container, editor, 3);
+  });
+
+  it('rebuilds the orphaned active node when lines are removed above a clamped active line', () => {
+    const { container, editor } = setup('r1\nr2\nr3\nk1\nk2\nACTIVE\nk4\nk5');
+    editor.setSelectionRange(15); // line 'ACTIVE' (index 5), offset 0
+    editor.applyExternal('k1\nk2\nACTIVE\nk4\nk5');
+    expect(editor.value).toBe('k1\nk2\nACTIVE\nk4\nk5');
+    // Absolute offset 15 lands on 'k4' in the new document.
+    expectSingleCoherentEditable(container, editor, 3);
+  });
+
+  it('rebuilds the orphaned active node on a bare value assignment', () => {
+    const { container, editor } = setup('x\ny\nACTIVE_OLD\nz');
+    editor.setSelectionRange(9); // line 'ACTIVE_OLD', offset 5
+    editor.value = 'w1\nw2\nx\ny\nACTIVE_OLD\nz';
+    expect(editor.value).toBe('w1\nw2\nx\ny\nACTIVE_OLD\nz');
+    // The setter is index-based: the active index is unchanged at 2.
+    expectSingleCoherentEditable(container, editor, 2);
   });
 });

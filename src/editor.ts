@@ -49,12 +49,16 @@ class MarkdownEditor {
 
   set value(text: string) {
     const previous = this.lines;
+    // Index of the raw (contenteditable) node in the DOM before the patch —
+    // captured before clamping moves `active`, because that node has to be
+    // rebuilt wherever it ends up.
+    const previousActive = this.active;
     this.lines = text.split('\n');
     if (this.active >= this.lines.length) {
       this.active = this.lines.length - 1;
     }
     this.caretOffset = Math.min(this.caretOffset, this.lines[this.active].length);
-    this.patchFrom(previous);
+    this.patchFrom(previous, previousActive);
   }
 
   // External replacement (remote sync apply): patch the changed lines and keep
@@ -122,7 +126,7 @@ class MarkdownEditor {
   // whose fence context changed (fence state and roles ripple across lines).
   // Falls back to a full render whenever the DOM is not a projection of
   // `previous`, which is the only case the trim cannot reason about.
-  private patchFrom(previous: string[]): void {
+  private patchFrom(previous: string[], previousActive: number): void {
     const next = this.lines;
     if (this.container.children.length !== previous.length) {
       this.renderAll();
@@ -155,7 +159,10 @@ class MarkdownEditor {
     }
     // Reindex the retained lines and rebuild the ones whose fence context (or
     // active state) changed. Retained tail lines map back to their old index
-    // through the length delta.
+    // through the length delta. `was === previousActive` catches the node that
+    // carried the raw contenteditable line before the patch: if its new index
+    // is no longer the active one it has to be re-rendered, or the DOM keeps a
+    // second ww-active node whose listeners still write to its old line index.
     const previousFences = computeFenceStates(previous);
     const previousRoles = this.fenceRoles(previous);
     const delta = next.length - previous.length;
@@ -172,7 +179,8 @@ class MarkdownEditor {
       if (
         fences[i] !== previousFences[was] ||
         roles[i] !== previousRoles[was] ||
-        i === this.active
+        i === this.active ||
+        was === previousActive
       ) {
         this.container.replaceChild(this.buildLine(i, fences[i], roles[i]), el);
       }
