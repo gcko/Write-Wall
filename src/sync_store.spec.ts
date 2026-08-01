@@ -3,12 +3,12 @@ import { assembleDocument, fnv1a, MARKER, packDocument, stripMarker } from './sy
 import { type SyncStatus, SyncStore } from './sync_store.js';
 import { FakeSyncWorld } from './test/fake_chrome_storage.js';
 
-const harness = (world = new FakeSyncWorld()) => {
-  const device = world.createDevice();
+const harness = (world = new FakeSyncWorld(), device = world.createDevice()) => {
   const docs: [string, string][] = [];
   const statuses: SyncStatus[] = [];
   let dirty = false;
   let text = '';
+  let writableCalls = 0;
   const store = new SyncStore({
     storage: device,
     onDocument: (t, origin) => {
@@ -18,6 +18,9 @@ const harness = (world = new FakeSyncWorld()) => {
     onStatus: (s) => statuses.push(s),
     isDirty: () => dirty,
     getText: () => text,
+    onWritable: () => {
+      writableCalls += 1;
+    },
     settleMs: 300,
     incoherentRetryMs: 5000,
   });
@@ -28,6 +31,7 @@ const harness = (world = new FakeSyncWorld()) => {
     store,
     docs,
     statuses,
+    writableCalls: () => writableCalls,
     setDirty: (d: boolean) => {
       dirty = d;
     },
@@ -222,9 +226,14 @@ describe('SyncStore backups and writerId', () => {
     const stored = await h.device.local.get('writerId');
     expect(typeof stored.writerId).toBe('string');
     const items = await h.device.sync.get('v2m');
-    expect(items.v2m).toMatchObject({ writerId: stored.writerId });
+    const meta = items.v2m as { writerId: string };
+    // Instance-scoped identity: the persisted per-profile id plus a per-store
+    // nonce, so two tabs of one profile never mistake each other for an echo.
+    expect(meta.writerId.startsWith(`${stored.writerId as string}:`)).toBe(true);
+    expect(meta.writerId.length).toBeGreaterThan((stored.writerId as string).length + 1);
     // ASCII-only: the meta byte accounting in packDocument depends on it.
     expect(stored.writerId as string).toMatch(/^[\x20-\x7e]+$/);
+    expect(meta.writerId).toMatch(/^[\x20-\x7e]+$/);
   });
 
   it('works without a local area, using an ephemeral writerId and no backups', async () => {
@@ -404,5 +413,165 @@ describe('SyncStore remote changes', () => {
     expect(b.docs.at(-1)?.[0]).toBe(big); // document unchanged locally
     // and a backup of the pre-conflict doc exists
     expect(await b.store.readNewestBackup()).toBe(big);
+  });
+});
+
+describe('SyncStore conflict routing and settle races', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  const twoDevices = async () => {
+    const world = new FakeSyncWorld();
+    const a = harness(world);
+    const b = harness(world);
+    await a.store.start();
+    await b.store.start();
+    return { world, a, b };
+  };
+
+  // b ends up holding `text` at rev 2, coherently, with a settled overlay.
+  const seed = async (
+    world: FakeSyncWorld,
+    a: ReturnType<typeof harness>,
+    b: ReturnType<typeof harness>,
+    text: string,
+  ) => {
+    a.setText(text);
+    await a.store.write(text);
+    world.deliver(b.device);
+    await vi.advanceTimersByTimeAsync(300);
+  };
+
+  it('resolves a stale-client conflict found by the retry read instead of blocking', async () => {
+    const { world, a, b } = await twoDevices();
+    const t1 = 'a'.repeat(20000);
+    await seed(world, a, b, t1);
+    expect(b.docs.at(-1)?.[0]).toBe(t1);
+
+    const t2 = 'b'.repeat(20000);
+    a.setText(t2);
+    await a.store.write(t2); // rev 3, queued for b
+    world.deliver(b.device, ['v2m']); // torn: meta only
+    await vi.advanceTimersByTimeAsync(300); // settle -> incoherent, retry armed at +5000
+    await vi.advanceTimersByTimeAsync(4800); // t+5100: just short of the retry
+    world.deliver(b.device); // the rest of T2 lands: storage is coherent
+    const stale = world.createDevice();
+    await stale.sync.set({ v2: 'stale head edit' }); // a pre-upgrade client clobbers the head
+    world.deliver(b.device, ['v2']); // storage now mismatches
+    await vi.advanceTimersByTimeAsync(250); // t+5350: the retry fires, its settle has not
+
+    expect(b.statuses.some((s) => s.kind === 'republished')).toBe(true);
+    const items = await b.device.sync.get(null);
+    expect((items.v2m as { rev: number }).rev).toBeGreaterThan(3);
+    expect(b.statuses.at(-1)?.kind).not.toBe('sync-incomplete');
+    expect(await b.store.write('still writable')).toBe(true);
+  });
+
+  it('does not swallow a sibling tab document as its own echo', async () => {
+    const world = new FakeSyncWorld();
+    const device = world.createDevice(); // one profile, one storage area, two tabs
+    const tab1 = harness(world, device);
+    const tab2 = harness(world, device);
+    await tab1.store.start();
+    await tab2.store.start();
+
+    tab1.setText('typed in tab one');
+    await tab1.store.write('typed in tab one'); // rev 2
+    tab2.setText('typed in tab two');
+    await tab2.store.write('typed in tab two'); // also rev 2: tab2 has not settled yet
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(tab1.docs.at(-1)).toEqual(['typed in tab two', 'remote']);
+    expect(tab2.docs.filter(([, o]) => o === 'remote')).toHaveLength(0); // its own echo
+  });
+
+  it('adopts a complete newer document that lands while a republish is prepared', async () => {
+    const { world, a, b } = await twoDevices();
+    const t1 = 'a'.repeat(20000);
+    await seed(world, a, b, t1);
+
+    const stale = world.createDevice();
+    await stale.sync.set({ v2: 'stale head edit' });
+    world.deliver(b.device); // conflict lands on b; settle armed
+    const t2 = 'b'.repeat(20000);
+    a.setText(t2);
+    await a.store.write(t2); // rev 3, complete, queued for b
+    // Deliver T2 while b sits inside backupNow's local.get, i.e. mid-republish.
+    const realLocalGet = b.device.local.get.bind(b.device.local);
+    vi.spyOn(b.device.local, 'get').mockImplementationOnce((keys: string | string[] | null) => {
+      world.deliver(b.device);
+      return realLocalGet(keys);
+    });
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(b.statuses.some((s) => s.kind === 'republished')).toBe(false);
+    expect(b.docs.at(-1)?.[0]).toBe(t2);
+    const items = await b.device.sync.get(null);
+    expect(assembleDocument(items)).toMatchObject({ state: 'coherent', text: t2 });
+    expect(await b.store.readNewestBackup()).toBe(t1); // T1 was still backed up
+  });
+
+  it('keeps a batch delivered while the retry read is in flight', async () => {
+    const { world, a, b } = await twoDevices();
+    const t1 = 'a'.repeat(20000);
+    await seed(world, a, b, t1);
+
+    const t2 = 'b'.repeat(20000);
+    a.setText(t2);
+    await a.store.write(t2); // rev 3
+    world.deliver(b.device, ['v2m']); // torn
+    await vi.advanceTimersByTimeAsync(300); // settle -> incoherent, retry armed at +5000
+    await vi.advanceTimersByTimeAsync(4800); // t+5100
+    world.deliver(b.device); // T2 completes in storage
+    const t3 = 'c'.repeat(20000);
+    a.setText(t3);
+    await a.store.write(t3); // rev 4, queued for b
+    // The retry read takes its snapshot, then T3's head+meta land mid-flight.
+    const realGet = b.device.sync.get.bind(b.device.sync);
+    vi.spyOn(b.device.sync, 'get').mockImplementationOnce((keys: string | string[] | null) => {
+      const snapshot = realGet(keys);
+      world.deliver(b.device, ['v2', 'v2m']);
+      return snapshot;
+    });
+    await vi.advanceTimersByTimeAsync(250); // t+5350: the retry adopts T2
+    world.deliver(b.device); // T3's chunks complete it
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(b.docs.at(-1)?.[0]).toBe(t3);
+    expect(b.statuses.some((s) => s.kind === 'republished')).toBe(false);
+  });
+
+  it('signals writable again through the settle path after a blocked tear', async () => {
+    const { world, a, b } = await twoDevices();
+    const big = 'a'.repeat(20000);
+    a.setText(big);
+    await a.store.write(big);
+    world.deliver(b.device, ['v2m']);
+    await vi.advanceTimersByTimeAsync(5300); // settle -> incoherent, retry -> blocked
+    expect(b.writableCalls()).toBe(0);
+    expect(b.statuses.at(-1)?.kind).toBe('sync-incomplete');
+
+    world.deliver(b.device);
+    await vi.advanceTimersByTimeAsync(300); // settle -> coherent
+    expect(b.writableCalls()).toBe(1);
+    expect(b.statuses.at(-1)?.kind).toBe('synced');
+  });
+
+  it('signals writable again through the retry-read path after a blocked tear', async () => {
+    const { world, a, b } = await twoDevices();
+    const big = 'a'.repeat(20000);
+    a.setText(big);
+    await a.store.write(big);
+    world.deliver(b.device, ['v2m']);
+    await vi.advanceTimersByTimeAsync(5300); // blocked
+    expect(b.writableCalls()).toBe(0);
+
+    world.deliver(b.device, ['v2']); // still torn: chunks missing
+    await vi.advanceTimersByTimeAsync(300); // settle -> incoherent, retry armed at +5000
+    await vi.advanceTimersByTimeAsync(4900); // just short of that retry
+    world.deliver(b.device); // chunks land in storage
+    await vi.advanceTimersByTimeAsync(150); // the retry fires first and unblocks
+
+    expect(b.writableCalls()).toBe(1);
+    expect(b.statuses.at(-1)?.kind).toBe('synced');
   });
 });

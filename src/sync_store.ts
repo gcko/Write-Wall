@@ -53,6 +53,14 @@ const WRITER_ID_KEY = 'writerId';
 const BACKUP_KEYS = ['backup_0', 'backup_1', 'backup_2'];
 const DOC_KEY_PATTERN = /^(v2|v2m|v2x_\d+|text)$/;
 
+// Stored values are strings (head, chunks) or the plain meta object, both of
+// which round-trip through structuredClone, so a JSON compare is exact enough.
+// A false 'different' only keeps an overlay entry, which is the safe direction.
+const sameStoredValue = (a: unknown, b: unknown): boolean =>
+  typeof a === 'string' || typeof b === 'string'
+    ? a === b
+    : JSON.stringify(a) === JSON.stringify(b);
+
 class SyncStore {
   private readonly options: Required<Pick<SyncStoreOptions, 'settleMs' | 'incoherentRetryMs'>> &
     SyncStoreOptions;
@@ -66,6 +74,13 @@ class SyncStore {
   private readonly overlay = new Map<string, unknown>();
   private settleTimer: ReturnType<typeof setTimeout> | undefined;
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
+  // Bumped by every settle/retry entry. A continuation resuming after an await
+  // with a stale generation has been superseded and must not touch state.
+  private generation = 0;
+  // Per-instance suffix for the echo identity. The persisted writerId is
+  // per-profile, so two open tabs share it; without this, a sibling tab's write
+  // at the same rev looks like our own echo and its document is dropped.
+  private readonly instanceNonce = Math.random().toString(36).slice(2, 10);
 
   constructor(options: SyncStoreOptions) {
     this.options = { settleMs: 300, incoherentRetryMs: 5000, ...options };
@@ -198,46 +213,22 @@ class SyncStore {
     // incoherent branch below re-arms it.
     clearTimeout(this.retryTimer);
     this.retryTimer = undefined;
+    this.generation += 1;
+    const generation = this.generation;
     const candidate = this.candidateItems();
     const result = assembleDocument(candidate);
     if (result.state === 'coherent') {
-      this.overlay.clear();
-      this.known = candidate;
-      const wasBlocked = this.blocked;
-      this.blocked = false;
-      const isEcho = result.meta.writerId === this.writerId && result.meta.rev === this.rev;
-      if (!isEcho) {
-        this.rev = Math.max(this.rev, result.meta.rev);
-        if (!this.options.isDirty()) {
-          this.options.onDocument(result.text, 'remote');
-        }
-      }
-      if (wasBlocked) {
-        this.options.onStatus({ kind: 'synced' });
-        this.options.onWritable?.();
-      }
+      this.adoptCoherent(candidate, result.text, result.meta);
       return;
     }
-    if (result.state === 'mismatch') {
-      // Coherent key-set, failed integrity: a stale (pre-upgrade) client
-      // overwrote v2. Protect the tail: back up, then republish our full doc.
-      const current = this.options.getText();
-      await this.backupNow(current);
-      this.overlay.clear();
-      this.rev = Math.max(this.rev, result.meta.rev);
-      this.blocked = false;
-      const written = await this.write(current);
-      if (written) this.options.onStatus({ kind: 'republished' });
-      return;
-    }
-    if (result.state === 'legacy') {
-      // Meta deleted remotely (should not happen; meta is never deleted).
-      // Treat like mismatch: republish over it.
-      const current = this.options.getText();
-      await this.backupNow(current);
-      this.overlay.clear();
-      this.blocked = false;
-      await this.write(current);
+    if (result.state === 'mismatch' || result.state === 'legacy') {
+      // 'mismatch': coherent key-set, failed integrity - a stale (pre-upgrade)
+      // client overwrote v2. 'legacy': meta deleted remotely (should not
+      // happen; meta is never deleted). Both are conflicts, not tearing.
+      await this.resolveConflict(
+        generation,
+        result.state === 'mismatch' ? result.meta.rev : this.rev,
+      );
       return;
     }
     // Incoherent: wait for more batches, then re-read once, then block.
@@ -248,14 +239,16 @@ class SyncStore {
 
   private async retryRead(): Promise<void> {
     this.retryTimer = undefined;
+    this.generation += 1;
+    const generation = this.generation;
     const items = await this.options.storage.sync.get(null);
+    if (generation !== this.generation) return; // a settle took over mid-read
     const result = assembleDocument(items);
     if (result.state === 'coherent') {
-      // Storage already reflects every delivered batch, so a settle still
-      // queued for those batches would only re-apply this same document.
-      clearTimeout(this.settleTimer);
-      this.settleTimer = undefined;
-      this.overlay.clear();
+      // Storage already reflects every batch delivered before the read, so the
+      // overlay entries it accounts for are redundant - but a batch delivered
+      // *during* the read is not in this snapshot and must survive.
+      this.rebaseOverlay(items);
       this.known = { ...items };
       const wasBlocked = this.blocked;
       this.blocked = false;
@@ -267,8 +260,77 @@ class SyncStore {
       this.options.onStatus({ kind: 'synced' });
       return;
     }
+    if (result.state === 'mismatch' || result.state === 'legacy') {
+      // A conflict, not tearing. Blocking here would strand it until some
+      // unrelated batch or a reload, with writes refused the whole time.
+      this.known = { ...items };
+      await this.resolveConflict(
+        generation,
+        result.state === 'mismatch' ? result.meta.rev : this.rev,
+      );
+      return;
+    }
     this.blocked = true;
     this.options.onStatus({ kind: 'sync-incomplete' });
+  }
+
+  private adoptCoherent(items: Record<string, unknown>, text: string, meta: SyncMeta): void {
+    this.overlay.clear();
+    this.known = items;
+    const wasBlocked = this.blocked;
+    this.blocked = false;
+    const isEcho = meta.writerId === this.writerId && meta.rev === this.rev;
+    if (!isEcho) {
+      this.rev = Math.max(this.rev, meta.rev);
+      if (!this.options.isDirty()) {
+        this.options.onDocument(text, 'remote');
+      }
+    }
+    if (wasBlocked) {
+      this.options.onStatus({ kind: 'synced' });
+      this.options.onWritable?.();
+    }
+  }
+
+  // Protect the tail: back up what we hold, then republish the full document
+  // over the damage - unless a complete, newer document arrives first.
+  private async resolveConflict(generation: number, conflictRev: number): Promise<void> {
+    const current = this.options.getText();
+    await this.backupNow(current);
+    if (generation !== this.generation) return; // a newer settle owns the state
+    // Re-assemble before committing: a complete document may have landed while
+    // we were backing up, and adopting it always beats clobbering it with our
+    // pre-conflict text at a rev that would win fleet-wide.
+    const candidate = this.candidateItems();
+    const fresh = assembleDocument(candidate);
+    const targetRev = Math.max(this.rev, conflictRev) + 1;
+    if (fresh.state === 'coherent' && fresh.meta.rev >= targetRev) {
+      this.adoptCoherent(candidate, fresh.text, fresh.meta);
+      return;
+    }
+    this.overlay.clear();
+    this.rev = Math.max(this.rev, conflictRev);
+    this.blocked = false;
+    const written = await this.write(current);
+    if (generation !== this.generation) return;
+    if (written) this.options.onStatus({ kind: 'republished' });
+  }
+
+  // Drop the overlay entries a fresh storage snapshot already accounts for,
+  // keeping any batch that landed after the snapshot was taken. The queued
+  // settle is cancelled only when nothing is left for it to reconcile.
+  private rebaseOverlay(items: Record<string, unknown>): void {
+    for (const key of [...this.overlay.keys()]) {
+      const value = this.overlay.get(key);
+      const present = key in items;
+      const accounted =
+        value === undefined ? !present : present && sameStoredValue(items[key], value);
+      if (accounted) this.overlay.delete(key);
+    }
+    if (this.overlay.size === 0) {
+      clearTimeout(this.settleTimer);
+      this.settleTimer = undefined;
+    }
   }
 
   async backupNow(text: string): Promise<void> {
@@ -305,15 +367,22 @@ class SyncStore {
   // Must stay ASCII-safe: packDocument's meta byte accounting assumes the
   // writerId contains no characters Chromium's WriteJson escapes differently
   // from JSON.stringify. Both sources below emit ASCII only.
+  //
+  // The returned id is 'persisted:instanceNonce'. The persisted half is stable
+  // per profile (so it survives reloads); the nonce makes the echo identity
+  // unique per SyncStore, because two tabs of one profile share the persisted
+  // half and would otherwise swallow each other's same-rev writes as echoes.
   private async loadWriterId(): Promise<string> {
     const local = this.options.storage.local;
-    if (!local) return `ephemeral-${Math.random().toString(36).slice(2)}`;
+    if (!local) return `ephemeral-${this.instanceNonce}`;
     const items = await local.get(WRITER_ID_KEY);
     const existing = items[WRITER_ID_KEY];
-    if (typeof existing === 'string' && existing.length > 0) return existing;
+    if (typeof existing === 'string' && existing.length > 0) {
+      return `${existing}:${this.instanceNonce}`;
+    }
     const fresh = globalThis.crypto?.randomUUID?.() ?? `w-${Math.random().toString(36).slice(2)}`;
     await local.set({ [WRITER_ID_KEY]: fresh });
-    return fresh;
+    return `${fresh}:${this.instanceNonce}`;
   }
 
   private assembleTail(items: Record<string, unknown>, meta: SyncMeta): string {
