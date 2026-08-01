@@ -12,9 +12,9 @@ describe('stringJsonBytes (Chromium base::WriteJson metering)', () => {
   });
   it('meters < and U+2028/U+2029 and other control chars at 6 bytes', () => {
     expect(stringJsonBytes('<')).toBe(8); // 2 quotes + <
-    expect(stringJsonBytes(' ')).toBe(8);
-    expect(stringJsonBytes(' ')).toBe(8);
-    expect(stringJsonBytes('')).toBe(8);
+    expect(stringJsonBytes('\u2028')).toBe(8);
+    expect(stringJsonBytes('\u2029')).toBe(8);
+    expect(stringJsonBytes('\u0001')).toBe(8);
   });
   it('meters non-ASCII as raw UTF-8', () => {
     expect(stringJsonBytes('é')).toBe(4); // 2 quotes + 2
