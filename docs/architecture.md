@@ -16,8 +16,7 @@ Single HTML page rendered when the extension action icon is clicked. Contains:
 ### Main Logic (`src/main.ts`)
 
 Runs in the context of the UI page. Responsibilities:
-- Reads stored text from `chrome.storage.sync` on load (key: `v2`)
-- Migrates legacy storage key `text` to `v2` if found
+- Owns a `SyncStore` (`src/sync_store.ts`), which reads, migrates, and writes sync storage on its behalf
 - Throttles writes to sync storage to respect Chrome quota limits
 - Updates byte/char/word counter after each sync
 - Displays "last synced" timestamp on successful save
@@ -39,21 +38,30 @@ Exports a generic `throttle` function used by `main.ts` to rate-limit storage wr
 
 ## Storage Architecture
 
+The document is sharded across sync keys, which raises the ceiling to ~95 KB. `src/sync_format.ts` packs and assembles; `src/sync_store.ts` (`SyncStore`) owns every sync write.
+
 | Store | Key | Purpose | Quota |
 |-------|-----|---------|-------|
-| `chrome.storage.sync` | `v2` | Synced text content | 8,192 bytes total |
-| `chrome.storage.sync` | `text` (legacy) | Old key, migrated to `v2` on first load | - |
+| `chrome.storage.sync` | `v2` | Head: the whole document, or its first chunk plus a truncation marker | 8,192 bytes per item |
+| `chrome.storage.sync` | `v2x_0..12` | Chunks, each valued `"<rev>\0<piece>"` | 8,192 bytes per item |
+| `chrome.storage.sync` | `v2m` | Meta: `{v, rev, writerId, chunks, len, hash}` | 8,192 bytes per item |
+| `chrome.storage.sync` | `text` (legacy) | Pre-v2 key, migrated on first load then removed | - |
 | `chrome.storage.local` | `cursor` | `{start, end}` cursor position | No sync quota |
+| `chrome.storage.local` | `theme`, `settings`, `countMode` | UI preferences | No sync quota |
+| `chrome.storage.local` | `writerId` | Stable per-device id, stamped into `v2m` | No sync quota |
+| `chrome.storage.local` | `backup_0..2` | Rolling backup ring, mirrored every 20 s | No sync quota |
+
+Total sync quota is 102,400 bytes; `packDocument` reserves 1,024 bytes of it and 256 bytes of each item, and meters bytes the way Chromium's `base::WriteJson` does rather than the way `JSON.stringify` does. A document that will not fit in 13 chunks throws `DocumentTooLargeError`.
 
 ### Sync Throttling
 
-Write rate is calculated from Chrome's `MAX_WRITE_OPERATIONS_PER_HOUR` constant:
+Write rate is derived from Chrome's `MAX_WRITE_OPERATIONS_PER_HOUR` constant:
 ```
-CHANGE_DELAY = (MAX_WRITE_OPERATIONS_PER_HOUR / 3600) * 4000
+CHANGE_DELAY = Math.ceil(HOUR_IN_MS / MAX_WRITE_OPERATIONS_PER_HOUR) * 2  // 4,000 ms
 ```
-This yields roughly a 4-second delay between sync writes. The `throttle` utility drops calls during the cooldown window (leading-edge throttle).
+That is 4,000 ms between sync writes — half the quota's 1-per-2-seconds rate, since one document write can touch several keys. The `throttle` utility fires on the leading edge and again on the trailing edge, so edits made inside the cooldown window still reach storage.
 
-`Cmd/Ctrl+S` bypasses the throttle for an immediate save.
+`Cmd/Ctrl+S` takes an immediate path, itself rate-guarded at 1,000 ms.
 
 ## Build Pipeline
 
@@ -92,13 +100,18 @@ Triggered by `v*.*.*` tag pushes:
 
 ```
 src/
-  main.ts              - UI logic, storage sync, event handlers
+  main.ts              - UI logic, event handlers, wiring
+  sync_format.ts       - Pure sharded sync format (metering, pack, assemble)
+  sync_store.ts        - SyncStore: startup, migration, writes, conflict protection
+  editor.ts            - Editor rendering and line-diff external applies
+  banner.ts            - Persistent dismissible data-event banner
+  settings.ts          - Settings state
+  markdown.ts          - Markdown rendering
   service_worker.ts    - Tab management on action click
   utils.ts             - Throttle utility
-  main.spec.ts         - Tests for main.ts
-  service_worker.spec.ts - Tests for service worker
-  utils.spec.ts        - Tests for throttle utility
-  verify-version.spec.ts - Tests for version verification
+  test/
+    fake_chrome_storage.ts - FakeSyncWorld, stateful storage fake for tests
+  *.spec.ts            - Vitest tests, one per module
 public/
   manifest.json        - MV3 manifest (source of truth)
   html/index.html      - Extension UI page

@@ -1,7 +1,9 @@
 # AGENTS
 
 ## Project Overview
-Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad backed by `chrome.storage.sync` so text is shared across the signed-in Chrome account. The UI is a single page (`public/html/index.html`) with a textarea and a byte counter; logic lives in `src/main.ts` and background logic in `src/service_worker.ts`.
+Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad backed by `chrome.storage.sync` so text is shared across the signed-in Chrome account. The UI is a single page (`public/html/index.html`) with an editor and a byte counter; logic lives in `src/main.ts` and background logic in `src/service_worker.ts`.
+
+The document is sharded across sync keys — head `v2`, chunks `v2x_0..12`, meta `v2m` — which raises the ceiling to ~95 KB against the 102,400-byte total quota. The 8,192-byte per-item quota still applies to every key, so each chunk is packed against it. `src/sync_format.ts` holds the pure format (byte metering, pack, assemble); `src/sync_store.ts` holds `SyncStore`, which owns startup, legacy migration, writes, settling, and conflict protection. `src/main.ts` never writes sync storage directly.
 
 ## Tech Stack
 - TypeScript (ES2024 target, strict mode)
@@ -13,9 +15,15 @@ Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad b
 - Chrome Extension Manifest V3
 
 ## Repository Layout
-- `src/main.ts`: UI logic, reads/writes synced text, throttles writes to respect sync quotas.
+- `src/main.ts`: UI logic; drives the editor and `SyncStore`, throttles writes to respect sync quotas.
+- `src/sync_format.ts`: Pure sync format — Chromium-exact byte metering, `packDocument`, `assembleDocument`.
+- `src/sync_store.ts`: `SyncStore` — startup, legacy migration, sync writes, settling, conflict protection, orphan-chunk GC.
+- `src/editor.ts`: Editor rendering and line-diff application of external changes.
+- `src/banner.ts`: Persistent dismissible banner for data events.
+- `src/settings.ts`, `src/markdown.ts`: Settings state and Markdown rendering.
 - `src/service_worker.ts`: MV3 service worker, opens `html/index.html` when the action icon is clicked.
 - `src/utils.ts`: Shared utilities (throttle function).
+- `src/test/fake_chrome_storage.ts`: `FakeSyncWorld`, a stateful Chrome storage fake for multi-device tests.
 - `public/html/index.html`: Extension UI page.
 - `public/css/main.css`: UI styles (dark theme, CSS custom properties).
 - `public/images/`: Extension icons (copied verbatim to `dist/` by Vite).
@@ -29,6 +37,9 @@ Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad b
 | What | Where |
 |------|-------|
 | UI behavior / event handlers | `src/main.ts` |
+| Sync format / conflict logic | `src/sync_store.ts`, `src/sync_format.ts` |
+| Editor rendering / external applies | `src/editor.ts` |
+| Data-event notices | `src/banner.ts` |
 | Background / tab management | `src/service_worker.ts` |
 | Shared utilities | `src/utils.ts` |
 | Styles | `public/css/main.css` |
@@ -63,10 +74,13 @@ Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad b
 - Both `package.json` and `public/manifest.json` versions must always match.
 
 ## Common Pitfalls
-- Sync quota is 8,192 bytes total. Test near-limit behavior.
+- Sync quota is 102,400 bytes total and 8,192 bytes per item; the sharded document ceiling is ~95 KB. Test near-limit behavior — the quota meter warns at 80%, and writes past the ceiling throw `DocumentTooLargeError`.
+- Stale or downgraded clients read only the head key `v2`, so they see a truncated document ending in a visible truncation marker. Never remove the marker: it is the only signal such a client gets.
+- Shrinking a document leaves orphan chunks (`v2x_n` beyond the new `chunks` count) in sync storage until the next startup GC. Assembly ignores them, but they still consume total quota in the meantime.
+- Chunk values are `"<rev>\0<piece>"`, and assembly rejects any chunk whose `rev` disagrees with `v2m`. Changing the packing or the meta shape breaks mixed-version fleets.
 - Vite uses esbuild for transpilation (not `tsconfig.build.json`). Type checking is separate (`pnpm type:check`).
 - Pre-commit hook runs lint + test. Fix with `pnpm lint:fix` before retrying.
-- Test environment is Node (not browser). Chrome APIs must be mocked in tests.
+- Test environment is Node (not browser). Chrome APIs must be mocked in tests; prefer `FakeSyncWorld` from `src/test/fake_chrome_storage.ts` when a test needs real storage behavior rather than call assertions.
 
 ## Workflow Policy
 - All work must be done in branches and merged via pull request.

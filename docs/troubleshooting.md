@@ -34,7 +34,9 @@ Both `package.json` and `public/manifest.json` must have the same version string
 
 ### Sync quota exceeded
 
-`chrome.storage.sync` has an 8,192-byte total limit. The byte counter in the UI shows current usage. If text approaches the limit, the sync write may silently fail. The throttle logic prevents exceeding write rate limits but does not guard against total size.
+`chrome.storage.sync` allows 102,400 bytes in total and 8,192 bytes per item. Write Wall shards the document across `v2`, `v2x_0..12`, and `v2m`, so the practical ceiling is ~95 KB. The quota meter in the UI shows usage against 102,400 and warns at 80%. Past the ceiling the write throws `DocumentTooLargeError` and the banner asks you to trim or export the document — nothing is written, so the last good copy stays in sync storage.
+
+If the meter reads higher than the document warrants, orphan chunks from an earlier, longer version are still present; they are removed by the startup GC on the next page load.
 
 ### Extension doesn't open / action icon does nothing
 
