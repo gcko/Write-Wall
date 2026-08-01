@@ -17,8 +17,8 @@ import {
 } from './settings.js';
 import { throttle } from './utils.js';
 
-const HOUR_IN_SECONDS = 60 * 60;
-const FOUR_SECONDS_IN_MIL = 4000;
+const HOUR_IN_MS = 60 * 60 * 1000;
+const IMMEDIATE_FLUSH_GUARD_MS = 1000;
 const CURSOR_KEY = 'cursor';
 const THEME_KEY = 'theme';
 const SETTINGS_KEY = 'settings';
@@ -29,8 +29,10 @@ const FLASH_MS = 1600;
 
 /* global chrome:readonly */
 ((chrome) => {
+  // One write op per 2s is the sync quota ceiling (1800/hour); run at half
+  // that rate so immediate flushes (Ctrl+S, tab switches) have headroom.
   const CHANGE_DELAY =
-      (chrome.storage.sync.MAX_WRITE_OPERATIONS_PER_HOUR / HOUR_IN_SECONDS) * FOUR_SECONDS_IN_MIL, // 4 second sync delay
+      Math.ceil(HOUR_IN_MS / chrome.storage.sync.MAX_WRITE_OPERATIONS_PER_HOUR) * 2, // 4000 ms
     LEGACY_STORAGE_KEY = 'text',
     STORAGE_KEY = 'v2',
     padEl = document.getElementById('pad') as HTMLElement,
@@ -223,9 +225,11 @@ const FLASH_MS = 1600;
   // would never sync unless another input arrived later.
   const throttledStorageUpdate = throttle(writeToSync, CHANGE_DELAY, { trailing: true });
 
-  const immediateStorageUpdate = (): void => {
-    writeToSync();
-  };
+  // Leading-edge with trailing coalesce: key-repeat Ctrl+S and rapid tab
+  // switches cannot burn the write-op quota.
+  const immediateStorageUpdate = throttle(writeToSync, IMMEDIATE_FLUSH_GUARD_MS, {
+    trailing: true,
+  });
 
   const editor = new MarkdownEditor({
     container: padEl,

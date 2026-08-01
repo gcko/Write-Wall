@@ -390,6 +390,36 @@ describe('main', () => {
       expect(chromeMock.storage.sync.set).toHaveBeenCalledWith({ v2: 'abcd' });
     });
 
+    it('throttles sync writes to at least 4 seconds', async () => {
+      vi.useFakeTimers();
+      const chromeMock = await boot({ v2: 'ab' });
+      chromeMock.storage.sync.set.mockClear();
+      typeInActive('abc');
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledTimes(1); // leading edge
+      typeInActive('abcd');
+      vi.advanceTimersByTime(3999);
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledTimes(1); // still inside window
+      vi.advanceTimersByTime(1);
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledTimes(2); // trailing edge at 4s
+    });
+
+    it('rate-guards repeated immediate flushes', async () => {
+      vi.useFakeTimers();
+      const chromeMock = await boot({ v2: 'ab' });
+      chromeMock.storage.sync.set.mockClear();
+      const pressCtrlS = () => {
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 's', ctrlKey: true, cancelable: true }),
+        );
+      };
+      pressCtrlS();
+      pressCtrlS();
+      pressCtrlS(); // key repeat
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(1000);
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledTimes(2); // one trailing flush
+    });
+
     it('persists a clear immediately even during an open throttle window', async () => {
       vi.useFakeTimers();
       const chromeMock = await boot({ v2: 'text' });
