@@ -47,6 +47,26 @@ describe('Banner', () => {
     expect(restore.hidden).toBe(true);
   });
 
+  it('reports whether a restore affordance is currently on screen', () => {
+    const banner = new Banner(buildRoot());
+    expect(banner.restoreVisible).toBe(false);
+    banner.show('replaced by another device', { restore: true });
+    expect(banner.restoreVisible).toBe(true);
+    // Re-asserting the flag is how a caller carries the affordance forward.
+    banner.show('a later, unrelated failure', { restore: banner.restoreVisible });
+    expect(banner.restoreVisible).toBe(true);
+    banner.hide();
+    expect(banner.restoreVisible).toBe(false);
+  });
+
+  it('reports no restore affordance when the root has no restore button', () => {
+    document.body.innerHTML = '<div id="banner" hidden><span id="banner-text"></span></div>';
+    const banner = new Banner(document.getElementById('banner') as HTMLElement);
+    banner.show('nothing to restore with', { restore: true });
+    expect(banner.visible).toBe(true);
+    expect(banner.restoreVisible).toBe(false);
+  });
+
   it('tolerates a root without text, restore, or dismiss elements', () => {
     document.body.innerHTML = '<div id="banner" hidden></div>';
     const banner = new Banner(document.getElementById('banner') as HTMLElement);

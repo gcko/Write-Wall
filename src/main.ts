@@ -274,6 +274,9 @@ const FLASH_MS = 1600;
           if (backup != null) {
             editor.applyExternal(backup);
             dirty = true;
+            // Same pairing as onInput: the restored text is a local edit, so
+            // any half-delivered remote batch must not be reconciled onto it.
+            syncStore.noteLocalEdit();
             throttledStorageUpdate();
           }
         })
@@ -302,14 +305,22 @@ const FLASH_MS = 1600;
       if (lastSyncedEl) {
         lastSyncedEl.textContent = 'sync failed';
       }
+      // A conflict backup is often the only surviving copy of the tail a stale
+      // device clobbered, and the Restore button is its only route back. Later,
+      // unrelated failures replace the message but must not take the affordance
+      // with them, so they re-assert whatever is already on screen.
+      const keepRestore = { restore: banner.restoreVisible };
       if (status.kind === 'too-large') {
-        banner.show('document too large to sync (~95 KB limit) — trim or export it');
+        banner.show('document too large to sync (~95 KB limit) — trim or export it', keepRestore);
       } else if (status.kind === 'sync-incomplete') {
-        banner.show('sync incomplete — waiting for the rest of the document from other devices');
+        banner.show(
+          'sync incomplete — waiting for the rest of the document from other devices',
+          keepRestore,
+        );
       } else if (status.kind === 'republished') {
         banner.show('protected your text from an outdated device — backup kept', { restore: true });
       } else {
-        banner.show(`not synced — ${status.message ?? 'unknown error'}`);
+        banner.show(`not synced — ${status.message ?? 'unknown error'}`, keepRestore);
       }
     },
     isDirty: () => dirty,
@@ -589,9 +600,11 @@ const FLASH_MS = 1600;
   });
 
   // Best-effort flush of unsynced text when the page goes away or is hidden.
-  // The trailing edge of both write throttles can be lost once the page is
-  // gone, and the immediate path is itself rate-guarded, so this flush can
-  // still be dropped — the local mirror below is the actual safety net.
+  // Nothing here is guaranteed to land: the trailing edge of both write
+  // throttles can be lost once the page is gone, the immediate path is itself
+  // rate-guarded, and the backup is a get-then-set pair teardown can cut in
+  // half. The durable recovery sources are sync storage and the 20s throttled
+  // mirror, which means a lost teardown costs at most BACKUP_MIRROR_MS of text.
   const flushIfDirty = (): void => {
     if (dirty) {
       immediateStorageUpdate();

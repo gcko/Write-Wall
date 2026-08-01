@@ -49,6 +49,13 @@ class Banner {
   get visible(): boolean {
     return !this.root.hidden;
   }
+
+  // Whether a Restore affordance is on screen right now. `show()` resets the
+  // button on every call, so a caller that must not strip an existing one
+  // reads this and passes it straight back in as `restore`.
+  get restoreVisible(): boolean {
+    return !this.root.hidden && this.restoreEl != null && !this.restoreEl.hidden;
+  }
 }
 
 export type { BannerActions };

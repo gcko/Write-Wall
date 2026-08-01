@@ -188,6 +188,31 @@ const writerWrites = async (
   await writer.sync.set(packDocument(text, rev, WRITER_ID));
 };
 
+// A coherent key set whose integrity check fails: a stale pre-upgrade client
+// overwrote v2. Recoverable, so startup republishes and reports 'republished'.
+const repairableMismatch = () => ({
+  v2: 'partial text',
+  v2m: { v: 1, rev: 3, writerId: 'stale-device', chunks: 0, len: 999, hash: 12345 },
+});
+
+// Chunk values are `<rev>\u0000<text>`; the NUL is the separator assembleDocument
+// splits on, and a wrong rev prefix would read as tearing rather than a conflict.
+const CHUNK_REV_PREFIX = '3\u0000';
+
+// The same conflict, but the recovered head + tail is far past what
+// packDocument can pack, so the repair write throws and start() rejects.
+const unrepairableMismatch = () => {
+  const chunks = 20;
+  const items: Record<string, unknown> = {
+    v2: 'z'.repeat(8000),
+    v2m: { v: 1, rev: 3, writerId: 'stale-device', chunks, len: 1, hash: 0 },
+  };
+  for (let i = 0; i < chunks; i++) {
+    items[`v2x_${i}`] = `${CHUNK_REV_PREFIX}${'z'.repeat(8000)}`;
+  }
+  return items;
+};
+
 const pad = () => document.getElementById('pad') as HTMLElement;
 const activeLine = () => document.querySelector('.ww-active') as HTMLElement;
 
@@ -612,6 +637,93 @@ describe('main', () => {
       expect(bannerText()).toMatch(/too large/i);
       expect(document.getElementById('banner')?.hidden).toBe(false);
       expect(document.getElementById('last-synced')?.textContent).toBe('sync failed');
+    });
+
+    it('falls back to the newest local backup when startup cannot repair sync', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      await boot(unrepairableMismatch(), { backup_0: { text: 'rescued draft', at: 9 } });
+      expect(bannerText()).toMatch(/backup/i);
+      expect(editorText()).toBe('rescued draft');
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('starts empty when startup fails and no backup exists', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      await boot(unrepairableMismatch());
+      expect(bannerText()).toMatch(/backup/i);
+      expect(editorText()).toBe('');
+      expect(activeLine()).toBeTruthy();
+      warn.mockRestore();
+    });
+
+    it('flushes the dirty document once a torn sync becomes coherent', async () => {
+      vi.useFakeTimers();
+      const world = new FakeSyncWorld();
+      const writer = world.createDevice();
+      const reader = world.createDevice();
+      const payload = packDocument('m'.repeat(10000), 1, WRITER_ID);
+      await writer.sync.set(payload);
+      // The head and meta land, the chunk does not: sync is blocked.
+      world.deliver(reader, ['v2', 'v2m']);
+      resetPage();
+      await loadMain(reader);
+      expect(bannerText()).toMatch(/sync incomplete/i);
+
+      typeInActive('mended by hand');
+      await vi.advanceTimersByTimeAsync(0);
+      // The blocked write was refused, so nothing of the edit reached storage.
+      expect((await reader.sync.get(null)).v2).not.toBe('mended by hand');
+
+      world.deliver(reader, ['v2x_0']);
+      await vi.advanceTimersByTimeAsync(300);
+      // onWritable fired, and the still-dirty text went out without new input.
+      expect((await reader.sync.get(null)).v2).toBe('mended by hand');
+    });
+
+    it('keeps the restore affordance when a later error replaces the conflict banner', async () => {
+      vi.useFakeTimers();
+      const chromeMock = await boot(repairableMismatch(), {
+        backup_0: { text: 'the rescued draft', at: 9 },
+      });
+      const restore = document.getElementById('banner-restore') as HTMLButtonElement;
+      expect(bannerText()).toMatch(/outdated device/i);
+      expect(restore.hidden).toBe(false);
+
+      chromeMock.storage.sync.set.mockImplementation(() => Promise.reject(new Error('offline')));
+      typeInActive('kept typing');
+      await flushPromises();
+
+      expect(bannerText()).toContain('not synced');
+      // The backup is still the only copy of the clobbered tail — the button
+      // that reaches it must survive an unrelated failure.
+      expect(restore.hidden).toBe(false);
+      chromeMock.storage.sync.set.mockImplementation(() => Promise.resolve());
+      restore.click();
+      await flushPromises();
+      expect(editorText()).toBe('the rescued draft');
+    });
+
+    it('restores the backup from the banner and reschedules a sync write', async () => {
+      vi.useFakeTimers();
+      const chromeMock = await boot(repairableMismatch(), {
+        backup_0: { text: 'the rescued draft', at: 9 },
+      });
+      const restore = document.getElementById('banner-restore') as HTMLButtonElement;
+      chromeMock.storage.sync.set.mockClear();
+      chromeMock.storage.sync.set.mockImplementation(() => Promise.reject(new Error('offline')));
+
+      restore.click();
+      await flushPromises();
+      expect(editorText()).toBe('the rescued draft');
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith(wrote('the rescued draft'));
+
+      // The refused write must leave the restore dirty, so the pagehide flush
+      // still has the text to send.
+      chromeMock.storage.sync.set.mockClear();
+      chromeMock.storage.sync.set.mockImplementation(() => Promise.resolve());
+      window.dispatchEvent(new Event('pagehide'));
+      expect(chromeMock.storage.sync.set).toHaveBeenCalledWith(wrote('the rescued draft'));
     });
 
     it('mirrors edits to a local backup the banner can restore', async () => {
