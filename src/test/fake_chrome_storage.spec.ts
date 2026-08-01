@@ -68,4 +68,64 @@ describe('FakeSyncWorld', () => {
     const used = await new Promise((resolve) => device.sync.getBytesInUse(null, resolve));
     expect(used).toBe(2 + 6); // key 'v2' + "abcd" with quotes
   });
+
+  it('does not consume write tokens when quota rejects the write', async () => {
+    const device = new FakeSyncWorld().createDevice();
+    // Fill 119 valid writes to stay under 120/min
+    for (let i = 0; i < 119; i++) {
+      await device.sync.set({ v2: `op${i}` });
+      vi.advanceTimersByTime(500);
+    }
+    // Try 5 oversized writes that exceed QUOTA_BYTES_PER_ITEM
+    for (let i = 0; i < 5; i++) {
+      await expect(device.sync.set({ v2: 'x'.repeat(8300) })).rejects.toThrow(
+        /QUOTA_BYTES_PER_ITEM/,
+      );
+    }
+    // 120th write should still succeed (rejected writes don't consume tokens)
+    await expect(device.sync.set({ v2: 'ok' })).resolves.toBeUndefined();
+  });
+
+  it('correctly bytes objects without double-escaping quotes', async () => {
+    const device = new FakeSyncWorld().createDevice();
+    // An object that serializes within QUOTA_BYTES_PER_ITEM (without double-escaping)
+    const smallObj = { data: 'x'.repeat(8100) };
+    // This test ensures byte counting uses TextEncoder (not stringJsonBytes with double-escaping)
+    await expect(device.sync.set({ obj: smallObj })).resolves.toBeUndefined();
+  });
+
+  it('fires onChanged for local.set with areaName "local"', async () => {
+    const device = new FakeSyncWorld().createDevice();
+    const seen: unknown[] = [];
+    device.onChanged.addListener((changes, area) => seen.push([area, changes]));
+    await device.local.set({ cursor: '42' });
+    expect(seen[0]).toEqual(['local', { cursor: { newValue: '42' } }]);
+  });
+
+  it('getBytesInUse respects its keys argument', async () => {
+    const device = new FakeSyncWorld().createDevice();
+    await device.sync.set({ k1: 'value1', k2: 'value2' });
+    const k1Bytes = await device.sync.getBytesInUse('k1');
+    const k2Bytes = await device.sync.getBytesInUse('k2');
+    const allBytes = await device.sync.getBytesInUse(null);
+    expect(k1Bytes + k2Bytes).toBe(allBytes);
+    expect(k1Bytes).toBeLessThan(allBytes);
+  });
+
+  it('cross-device delivery reports receiver-relative oldValue', async () => {
+    const world = new FakeSyncWorld();
+    const deviceA = world.createDevice();
+    const deviceB = world.createDevice();
+    const changes: unknown[] = [];
+    deviceB.onChanged.addListener((c) => changes.push(c));
+    // B sets its local value
+    await deviceB.sync.set({ k: 'b-local' });
+    changes.length = 0; // reset
+    // A sets a different value
+    await deviceA.sync.set({ k: 'a-value' });
+    // Deliver to B
+    world.deliver(deviceB);
+    // B's listener should report oldValue as its prior state, not A's
+    expect(changes[0]).toEqual({ k: { oldValue: 'b-local', newValue: 'a-value' } });
+  });
 });

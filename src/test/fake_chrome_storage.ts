@@ -8,7 +8,7 @@ type GetCallback = (items: Items) => void;
 const itemBytes = (key: string, value: unknown): number =>
   typeof value === 'string'
     ? chromeItemBytes(key, value)
-    : key.length + stringJsonBytes(JSON.stringify(value)) - 2; // object: serialized form, quotes not doubled
+    : key.length + new TextEncoder().encode(JSON.stringify(value)).length;
 
 const clone = <T>(value: T): T => structuredClone(value);
 
@@ -37,20 +37,22 @@ class FakeChromeStorage {
       return Promise.resolve(result);
     },
     set: (items: Items): Promise<void> => {
-      const err = this.checkWriteOp() ?? this.checkQuota(items);
+      const err = this.checkWriteOpQuota() ?? this.checkQuota(items);
       if (err) return Promise.reject(new Error(err));
+      this.recordWriteOp();
       const changes: Changes = {};
       for (const [key, value] of Object.entries(items)) {
         changes[key] = { oldValue: clone(this.syncItems.get(key)), newValue: clone(value) };
         this.syncItems.set(key, clone(value));
       }
-      this.emit(changes);
+      this.emit(changes, 'sync');
       this.world.broadcast(this, changes);
       return Promise.resolve();
     },
     remove: (keys: string | string[]): Promise<void> => {
-      const err = this.checkWriteOp();
+      const err = this.checkWriteOpQuota();
       if (err) return Promise.reject(new Error(err));
+      this.recordWriteOp();
       const changes: Changes = {};
       for (const key of Array.isArray(keys) ? keys : [keys]) {
         if (!this.syncItems.has(key)) continue;
@@ -58,17 +60,22 @@ class FakeChromeStorage {
         this.syncItems.delete(key);
       }
       if (Object.keys(changes).length > 0) {
-        this.emit(changes);
+        this.emit(changes, 'sync');
         this.world.broadcast(this, changes);
       }
       return Promise.resolve();
     },
     getBytesInUse: (
-      _keys: string | string[] | null,
+      keys: string | string[] | null,
       callback?: (n: number) => void,
     ): Promise<number> => {
       let total = 0;
-      for (const [key, value] of this.syncItems) total += itemBytes(key, value);
+      const wanted =
+        keys == null ? [...this.syncItems.keys()] : Array.isArray(keys) ? keys : [keys];
+      for (const key of wanted) {
+        const value = this.syncItems.get(key);
+        if (value !== undefined) total += itemBytes(key, value);
+      }
       callback?.(total);
       return Promise.resolve(total);
     },
@@ -86,11 +93,24 @@ class FakeChromeStorage {
       return Promise.resolve(result);
     },
     set: (items: Items): Promise<void> => {
-      for (const [key, value] of Object.entries(items)) this.localItems.set(key, clone(value));
+      const changes: Changes = {};
+      for (const [key, value] of Object.entries(items)) {
+        changes[key] = { newValue: clone(value) };
+        this.localItems.set(key, clone(value));
+      }
+      this.emit(changes, 'local');
       return Promise.resolve();
     },
     remove: (keys: string | string[]): Promise<void> => {
-      for (const key of Array.isArray(keys) ? keys : [keys]) this.localItems.delete(key);
+      const changes: Changes = {};
+      for (const key of Array.isArray(keys) ? keys : [keys]) {
+        if (!this.localItems.has(key)) continue;
+        changes[key] = { oldValue: clone(this.localItems.get(key)) };
+        this.localItems.delete(key);
+      }
+      if (Object.keys(changes).length > 0) {
+        this.emit(changes, 'local');
+      }
       return Promise.resolve();
     },
   };
@@ -107,25 +127,32 @@ class FakeChromeStorage {
 
   // Called by the world when another device's changes are delivered.
   applyRemote(changes: Changes): void {
+    const receiverRelativeChanges: Changes = {};
     for (const [key, change] of Object.entries(changes)) {
+      const receiverOldValue = this.syncItems.get(key);
       if ('newValue' in change && change.newValue !== undefined) {
+        receiverRelativeChanges[key] = {
+          oldValue: receiverOldValue,
+          newValue: clone(change.newValue),
+        };
         this.syncItems.set(key, clone(change.newValue));
       } else {
+        receiverRelativeChanges[key] = { oldValue: receiverOldValue };
         this.syncItems.delete(key);
       }
     }
-    this.emit(changes);
+    this.emit(receiverRelativeChanges, 'sync');
   }
 
   queueRemote(changes: Changes): void {
     for (const [key, change] of Object.entries(changes)) this.pendingRemote.set(key, change);
   }
 
-  private emit(changes: Changes): void {
-    for (const listener of this.listeners) listener(clone(changes), 'sync');
+  private emit(changes: Changes, areaName: string): void {
+    for (const listener of this.listeners) listener(clone(changes), areaName);
   }
 
-  private checkWriteOp(): string | null {
+  private checkWriteOpQuota(): string | null {
     const now = Date.now();
     while (this.writeTimestamps.length > 0 && now - this.writeTimestamps[0] >= 3600000) {
       this.writeTimestamps.shift();
@@ -137,8 +164,11 @@ class FakeChromeStorage {
     if (lastMinute >= 120) {
       return 'This request exceeds the MAX_WRITE_OPERATIONS_PER_MINUTE quota.';
     }
-    this.writeTimestamps.push(now);
     return null;
+  }
+
+  private recordWriteOp(): void {
+    this.writeTimestamps.push(Date.now());
   }
 
   private checkQuota(items: Items): string | null {
