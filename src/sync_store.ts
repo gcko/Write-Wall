@@ -252,8 +252,11 @@ class SyncStore {
       this.known = { ...items };
       const wasBlocked = this.blocked;
       this.blocked = false;
+      const isEcho = result.meta.writerId === this.writerId && result.meta.rev === this.rev;
       this.rev = Math.max(this.rev, result.meta.rev);
-      if (!this.options.isDirty()) {
+      if (this.options.isDirty()) {
+        if (!isEcho) this.backupDiscarded(result.text);
+      } else {
         this.options.onDocument(result.text, 'remote');
       }
       if (wasBlocked) this.options.onWritable?.();
@@ -282,7 +285,9 @@ class SyncStore {
     const isEcho = meta.writerId === this.writerId && meta.rev === this.rev;
     if (!isEcho) {
       this.rev = Math.max(this.rev, meta.rev);
-      if (!this.options.isDirty()) {
+      if (this.options.isDirty()) {
+        this.backupDiscarded(text);
+      } else {
         this.options.onDocument(text, 'remote');
       }
     }
@@ -290,6 +295,17 @@ class SyncStore {
       this.options.onStatus({ kind: 'synced' });
       this.options.onWritable?.();
     }
+  }
+
+  // A coherent remote document that lands while the editor is dirty is not
+  // applied: the local edit wins and flushes over it at a higher rev. That
+  // document was never in any editor, so no other path keeps a copy of it -
+  // this backup is the only route back to the tail it carried.
+  private backupDiscarded(text: string): void {
+    if (text === this.options.getText()) return;
+    void this.backupNow(text).catch((e: unknown) => {
+      console.warn(e);
+    });
   }
 
   // Protect the tail: back up what we hold, then republish the full document

@@ -567,6 +567,26 @@ describe('main', () => {
       expect(chromeMock.storage.sync.set).toHaveBeenCalledWith(wrote(''));
     });
 
+    it('keeps the pad cleared when coherence arrives after a blocked clear', async () => {
+      vi.useFakeTimers();
+      const world = new FakeSyncWorld();
+      const writer = world.createDevice();
+      const reader = world.createDevice();
+      const big = 'k'.repeat(20000);
+      await writer.sync.set(packDocument(big, 1, WRITER_ID));
+      world.deliver(reader, ['v2m']); // torn boot: meta only, so writes are blocked
+      resetPage();
+      await loadMain(reader);
+      expect(bannerText()).toContain('sync incomplete');
+      (document.getElementById('clear') as HTMLElement).click();
+      expect(editorText()).toBe('');
+      world.deliver(reader); // the rest arrives -> coherent
+      await vi.advanceTimersByTimeAsync(300);
+      // Clear is a local edit like any other: the arriving remote document must
+      // not be applied over it and resurrect the cleared text.
+      expect(editorText()).toBe('');
+    });
+
     it('surfaces sync write failures instead of failing silently', async () => {
       const chromeMock = await boot({ v2: 'a' });
       chromeMock.storage.sync.set.mockImplementation(() => Promise.reject(new Error('quota')));

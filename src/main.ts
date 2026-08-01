@@ -531,6 +531,10 @@ const COUNT_DEBOUNCE_MS = 250;
         return;
       }
       editor.value = '';
+      // Same pairing as onInput: clearing is a local edit, so it must survive a
+      // blocked or racing write instead of being undone by the next remote apply.
+      dirty = true;
+      syncStore.noteLocalEdit();
       // Immediate write: a throttled call could be silently dropped inside an
       // open throttle window, leaving the old text in sync storage while the
       // UI reports "cleared".

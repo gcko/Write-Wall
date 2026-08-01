@@ -185,9 +185,14 @@ const assembleDocument = (items: Record<string, unknown>): AssembleResult => {
     }
     pieces.push(raw.slice(sep + 1));
   }
-  const text = stripMarker(head) + pieces.join('');
+  // The marker is appended only when the document shards, so strip it only
+  // then. An unsharded document may genuinely end with the marker (a user
+  // pasting back the truncated view a stale client showed them), and stripping
+  // it there would fail the integrity check and read as a conflict forever.
+  const headText = metaRaw.chunks > 0 ? stripMarker(head) : head;
+  const text = headText + pieces.join('');
   if (text.length !== metaRaw.len || fnv1a(text) !== metaRaw.hash) {
-    return { state: 'mismatch', meta: metaRaw, headText: stripMarker(head) };
+    return { state: 'mismatch', meta: metaRaw, headText };
   }
   return { state: 'coherent', text, meta: metaRaw };
 };

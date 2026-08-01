@@ -157,6 +157,27 @@ describe('assembleDocument', () => {
     }
   });
 
+  it('round-trips text that genuinely ends with the truncation marker', () => {
+    // A stale client shows a truncated view ending in MARKER; a user can copy
+    // that view and paste it back. The marker is only a sharding artefact, so
+    // it must be stripped from the head only when the document actually sharded.
+    const small = `abc${MARKER}`;
+    const smallResult = assembleDocument(packDocument(small, 5, WRITER));
+    expect(smallResult.state).toBe('coherent');
+    if (smallResult.state === 'coherent') {
+      expect(smallResult.text).toBe(small);
+    }
+
+    const sharded = `${'m'.repeat(20000)}${MARKER}`;
+    const shardedPayload = packDocument(sharded, 6, WRITER);
+    expect((shardedPayload[META_KEY] as SyncMeta).chunks).toBeGreaterThan(0);
+    const shardedResult = assembleDocument(shardedPayload);
+    expect(shardedResult.state).toBe('coherent');
+    if (shardedResult.state === 'coherent') {
+      expect(shardedResult.text).toBe(sharded);
+    }
+  });
+
   it('reports legacy when meta is absent', () => {
     expect(assembleDocument({ v2: 'old text' })).toEqual({ state: 'legacy', text: 'old text' });
     expect(assembleDocument({})).toEqual({ state: 'legacy', text: '' });

@@ -361,6 +361,42 @@ describe('SyncStore remote changes', () => {
     expect(b.docs.filter(([, o]) => o === 'remote')).toHaveLength(0);
   });
 
+  it('backs up a coherent document the settle discards because the editor is dirty', async () => {
+    const world = new FakeSyncWorld();
+    const a = harness(world);
+    await a.store.start();
+    const b = harness(world);
+    const big = 'g'.repeat(20000);
+    a.setText(big);
+    await a.store.write(big);
+    world.deliver(b.device, ['v2m']); // torn boot: meta only, chunks missing
+    expect(await b.store.start()).not.toBe(big);
+    b.setDirty(true);
+    b.setText('edited while torn');
+    world.deliver(b.device); // the rest arrives: coherent, but we are dirty
+    await vi.advanceTimersByTimeAsync(300);
+    expect(b.docs.filter(([, o]) => o === 'remote')).toHaveLength(0); // local edit kept
+    // The discarded document was never in any editor, so this backup is the
+    // only surviving copy of the tail the dirty flush is about to overwrite.
+    expect(await b.store.readNewestBackup()).toBe(big);
+  });
+
+  it('backs up a coherent document the retry read discards because the editor is dirty', async () => {
+    const { world, a, b } = await twoDevices();
+    const big = 'h'.repeat(20000);
+    a.setText(big);
+    await a.store.write(big);
+    world.deliver(b.device, ['v2m']); // torn: meta only
+    await vi.advanceTimersByTimeAsync(300); // settle -> incoherent, retry armed at +5000
+    b.setDirty(true);
+    b.setText('typed on B while torn');
+    await vi.advanceTimersByTimeAsync(4800); // just short of the retry
+    world.deliver(b.device); // storage is coherent; the retry read fires first
+    await vi.advanceTimersByTimeAsync(500);
+    expect(b.docs.filter(([, o]) => o === 'remote')).toHaveLength(0);
+    expect(await b.store.readNewestBackup()).toBe(big);
+  });
+
   it('applies a recovered document once when the retry read beats a queued settle', async () => {
     const { world, a, b } = await twoDevices();
     const big = 'e'.repeat(20000);
