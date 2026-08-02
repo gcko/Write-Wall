@@ -108,6 +108,7 @@ The document is sharded across sync keys — head `v2`, chunks `v2x_0..12`, meta
 
 ## Pull Request Workflow
 - Only create a pull request if and only if a user specifically requests a pull request to be made.
+- PRE-PR GATE: run the `/sync-docs` skill (`.claude/skills/sync-docs`) before `gh pr create`, so the doc updates for the branch's changes ride in the same PR.
 - DIRECTIVE: All pull requests MUST target the `main` branch. Never use `master` as the base branch.
 - When a PR is requested to be made, the PR summary must follow `.github/PULL_REQUEST_TEMPLATE.md`.
 - Merge only after review and required checks pass.
