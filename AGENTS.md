@@ -57,7 +57,8 @@ The document is sharded across sync keys — head `v2`, chunks `v2x_0..12`, meta
 - Production build: `pnpm build` generates `dist/` and `app.zip`.
 
 ## Scripts (package.json)
-- `pnpm test`: Run Vitest tests.
+- `pnpm test`: Run Vitest tests (`test:coverage` / `test:coverage:summary` for coverage runs).
+- `pnpm verify-version`: Check `package.json` and `public/manifest.json` versions match.
 - `pnpm lint`: Run Biome checks.
 - `pnpm lint:fix`: Run Biome with auto-fix.
 - `pnpm develop`: Vite build in watch mode.

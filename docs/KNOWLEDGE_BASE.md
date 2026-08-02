@@ -16,6 +16,4 @@ Common issues (pnpm, nave, stale builds, test failures, sync quota), debugging t
 Design of the sharded `chrome.storage.sync` format: head/chunk/meta keys, Chromium-exact byte metering, the ~95 KB ceiling, conflict protection, and mixed-version fleet safety.
 -> docs/superpowers/specs/2026-08-01-sharded-sync-storage-design.md
 
-## UX Improvement Plans
-Planned features and UI/UX improvements: save-on-input, clear button, copy all, bytes/chars/words toggle, tab reuse, export, cursor restore, and more.
--> docs/plans/low-hanging-fruit-and-ux.md
+<!-- docs-synced-through: 12e87e3 (2026-08-02) -->
