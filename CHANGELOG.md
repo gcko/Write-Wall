@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [4.0.0] - 2026-08-02
+
+### Added
+
+- Documents can now grow to ~95 KB (previously 8 KB) by sharding across `chrome.storage.sync` keys. Existing documents upgrade silently — no migration step, and the storage stays readable by the previous version until it exceeds the old limit.
+- Persistent in-app banner for data events (sync conflicts, storage limits, incomplete sync) with a one-click Restore from a new local backup ring.
+- Quota meter and byte counter now track the full 102,400-byte sync quota, with an earlier warning at 80%.
+- Conflict protection across devices and versions: torn sync deliveries never reach the editor, and outdated clients cannot truncate a long document.
+
+### Fixed
+
+- Sync write throttle actually honors its documented 4-second interval (previously 2 seconds, saturating Chrome's hourly write quota during sustained typing); Ctrl+S and tab-switch flushes are rate-guarded.
+- Sync failures now report their real cause (size limit vs. write-rate limit) instead of always blaming the byte limit.
+
+### Changed
+
+- Editor applies remote updates by patching only changed lines, preserving caret position — large documents no longer rebuild the whole page on every sync.
+
 ## [3.0.1] - 2026-07-20
 
 ### Fixed
