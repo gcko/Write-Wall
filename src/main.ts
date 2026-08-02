@@ -7,6 +7,7 @@
  *         Mountain View, California, 94041, USA.
  */
 
+import { Banner } from './banner.js';
 import { MarkdownEditor } from './editor.js';
 import {
   applySettings,
@@ -15,24 +16,27 @@ import {
   normalizeSettings,
   type PadSettings,
 } from './settings.js';
+import { SYNC_QUOTA_BYTES } from './sync_format.js';
+import { SyncStore } from './sync_store.js';
 import { throttle } from './utils.js';
 
-const HOUR_IN_SECONDS = 60 * 60;
-const FOUR_SECONDS_IN_MIL = 4000;
+const HOUR_IN_MS = 60 * 60 * 1000;
+const IMMEDIATE_FLUSH_GUARD_MS = 1000;
+const BACKUP_MIRROR_MS = 20000;
 const CURSOR_KEY = 'cursor';
 const THEME_KEY = 'theme';
 const SETTINGS_KEY = 'settings';
 const COUNT_MODE_KEY = 'countMode';
-const QUOTA_BYTES = 8192;
-const NEAR_LIMIT_PCT = 90;
+const NEAR_LIMIT_PCT = 80;
 const FLASH_MS = 1600;
+const COUNT_DEBOUNCE_MS = 250;
 
 /* global chrome:readonly */
 ((chrome) => {
+  // One write op per 2s is the sync quota ceiling (1800/hour); run at half
+  // that rate so immediate flushes (Ctrl+S, tab switches) have headroom.
   const CHANGE_DELAY =
-      (chrome.storage.sync.MAX_WRITE_OPERATIONS_PER_HOUR / HOUR_IN_SECONDS) * FOUR_SECONDS_IN_MIL, // 4 second sync delay
-    LEGACY_STORAGE_KEY = 'text',
-    STORAGE_KEY = 'v2',
+      Math.ceil(HOUR_IN_MS / chrome.storage.sync.MAX_WRITE_OPERATIONS_PER_HOUR) * 2, // 4000 ms
     padEl = document.getElementById('pad') as HTMLElement,
     statusCountEl = document.getElementById('status-count'),
     lastSyncedEl = document.getElementById('last-synced'),
@@ -44,9 +48,10 @@ const FLASH_MS = 1600;
     exportButtonEl = document.getElementById('export'),
     drawerEl = document.getElementById('drawer'),
     drawerToggleEl = document.getElementById('drawer-toggle'),
-    storage = chrome.storage,
-    storageObject: Record<string, string> = {};
-  let remoteStoredText = '';
+    // A detached fallback keeps the banner harmless on a page that omits it
+    // (the minimal DOM the extension can be embedded in during tests).
+    bannerEl = document.getElementById('banner') ?? document.createElement('div'),
+    storage = chrome.storage;
   let settings: PadSettings = { ...DEFAULT_SETTINGS };
   let countMode: 'bytes' | 'chars' | 'words' = 'words';
   let flashTimer: ReturnType<typeof setTimeout> | undefined;
@@ -64,6 +69,10 @@ const FLASH_MS = 1600;
     const trimmed = text.trim();
     return trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length;
   };
+
+  // The whole 100 KB area is the budget now that a document is sharded across
+  // items; the 8,192-byte per-item cap is an internal packing detail.
+  const syncLimitBytes = (): number => storage.sync.QUOTA_BYTES ?? SYNC_QUOTA_BYTES;
 
   const countLabel = (): void => {
     if (!statusCountEl) {
@@ -89,18 +98,20 @@ const FLASH_MS = 1600;
       statusCountEl.setAttribute('aria-label', `${wordCount} words — click to cycle count mode`);
       return;
     }
+    const limit = syncLimitBytes();
     storage.sync.getBytesInUse(null, (inUse) => {
-      statusCountEl.textContent = `${inUse} / ${QUOTA_BYTES} B`;
+      statusCountEl.textContent = `${inUse} / ${limit} B`;
       statusCountEl.setAttribute(
         'aria-label',
-        `${inUse} of ${QUOTA_BYTES} bytes — click to cycle count mode`,
+        `${inUse} of ${limit} bytes — click to cycle count mode`,
       );
     });
   };
 
   const updateQuota = (): void => {
+    const limit = syncLimitBytes();
     storage.sync.getBytesInUse(null, (inUse) => {
-      const pct = Math.max(0, Math.min(100, Math.round((inUse / QUOTA_BYTES) * 100)));
+      const pct = Math.max(0, Math.min(100, Math.round((inUse / limit) * 100)));
       if (quotaFillEl) {
         quotaFillEl.style.width = `${pct}%`;
       }
@@ -109,7 +120,7 @@ const FLASH_MS = 1600;
       }
       if (nearLimitEl) {
         nearLimitEl.hidden = pct < NEAR_LIMIT_PCT;
-        nearLimitEl.textContent = `approaching sync limit — ${QUOTA_BYTES - inUse} B left`;
+        nearLimitEl.textContent = `approaching sync limit — ${limit - inUse} B left`;
       }
     });
   };
@@ -193,29 +204,20 @@ const FLASH_MS = 1600;
     }
   };
 
-  // Shared write path. On failure (most commonly the 8,192-byte per-item
-  // quota) the user gets a visible signal instead of a silent console.warn —
-  // the meter alone can't show it, since getBytesInUse only reports
-  // successfully committed bytes.
+  // Shared write path. Every sync write in the page funnels through the store,
+  // which owns sharding, revisions, and conflict handling; the outcome is
+  // surfaced through onStatus rather than here.
   const writeToSync = (): void => {
     const written = editor.value;
-    storageObject[STORAGE_KEY] = written;
-    storage.sync
-      .set(storageObject)
-      .then(() => {
-        if (editor.value === written) {
+    syncStore
+      .write(written)
+      .then((ok: boolean) => {
+        if (ok && editor.value === written) {
           dirty = false;
         }
-        remoteStoredText = written;
-        updateUsage();
-        updateLastSynced();
       })
       .catch((e: unknown) => {
         console.warn(e);
-        if (lastSyncedEl) {
-          lastSyncedEl.textContent = 'sync failed';
-        }
-        flash('not synced — over the 8,192 byte limit?');
       });
   };
 
@@ -223,17 +225,41 @@ const FLASH_MS = 1600;
   // would never sync unless another input arrived later.
   const throttledStorageUpdate = throttle(writeToSync, CHANGE_DELAY, { trailing: true });
 
-  const immediateStorageUpdate = (): void => {
-    writeToSync();
+  // Leading-edge with trailing coalesce: key-repeat Ctrl+S and rapid tab
+  // switches cannot burn the write-op quota.
+  const immediateStorageUpdate = throttle(writeToSync, IMMEDIATE_FLUSH_GUARD_MS, {
+    trailing: true,
+  });
+
+  // Local mirror of the text, independent of whether sync accepted it. Cheap
+  // (chrome.storage.local has no write-op quota) so it can lag far behind the
+  // keystroke and still be the thing that survives a bad sync state.
+  const mirrorToBackup = (): void => {
+    syncStore.backupNow(editor.value).catch((e: unknown) => {
+      console.warn(e);
+    });
   };
+
+  const throttledBackup = throttle(mirrorToBackup, BACKUP_MIRROR_MS, { trailing: true });
+
+  // Re-counting on every keystroke walks the whole document; at typing speed
+  // that is the most expensive thing in the input path. The leading edge keeps
+  // the label responsive and the trailing edge lands the final count, so a
+  // burst costs two counts instead of one per key. Every other caller (mode
+  // toggle, load, status updates) still counts immediately.
+  const debouncedCountLabel = throttle(countLabel, COUNT_DEBOUNCE_MS, { trailing: true });
 
   const editor = new MarkdownEditor({
     container: padEl,
     onInput: () => {
       dirty = true;
+      // Ordered before the write: it drops any half-delivered remote batch, so
+      // a torn update can never be reconciled on top of the text being typed.
+      syncStore.noteLocalEdit();
       throttledStorageUpdate();
+      throttledBackup();
       if (countMode !== 'bytes') {
-        countLabel();
+        debouncedCountLabel();
       }
       storeCursorPosition();
       keepActiveLineVisible();
@@ -242,6 +268,75 @@ const FLASH_MS = 1600;
       storeCursorPosition();
       typewriterScroll();
       keepActiveLineVisible();
+    },
+  });
+
+  // Data events (conflicts, incomplete syncs, oversized documents) persist in
+  // the banner until dismissed; the status-bar flash stays for cosmetic
+  // confirmations only, which are fine to miss.
+  const banner = new Banner(bannerEl, {
+    onRestore: () => {
+      syncStore
+        .readNewestBackup()
+        .then((backup: string | null) => {
+          if (backup != null) {
+            editor.applyExternal(backup);
+            dirty = true;
+            // Same pairing as onInput: the restored text is a local edit, so
+            // any half-delivered remote batch must not be reconciled onto it.
+            syncStore.noteLocalEdit();
+            throttledStorageUpdate();
+          }
+        })
+        .catch((e: unknown) => {
+          console.warn(e);
+        });
+    },
+  });
+
+  const syncStore = new SyncStore({
+    storage,
+    onDocument: (text, origin) => {
+      editor.applyExternal(text);
+      updateUsage();
+      updateLastSynced();
+      if (origin === 'conflict-republish') {
+        banner.show('restored full text over an edit from an outdated device', { restore: true });
+      }
+    },
+    onStatus: (status) => {
+      if (status.kind === 'synced') {
+        updateUsage();
+        updateLastSynced();
+        return;
+      }
+      if (lastSyncedEl) {
+        lastSyncedEl.textContent = 'sync failed';
+      }
+      // A conflict backup is often the only surviving copy of the tail a stale
+      // device clobbered, and the Restore button is its only route back. Later,
+      // unrelated failures replace the message but must not take the affordance
+      // with them, so they re-assert whatever is already on screen.
+      const keepRestore = { restore: banner.restoreVisible };
+      if (status.kind === 'too-large') {
+        banner.show('document too large to sync (~95 KB limit) — trim or export it', keepRestore);
+      } else if (status.kind === 'sync-incomplete') {
+        banner.show(
+          'sync incomplete — waiting for the rest of the document from other devices',
+          keepRestore,
+        );
+      } else if (status.kind === 'republished') {
+        banner.show('protected your text from an outdated device — backup kept', { restore: true });
+      } else {
+        banner.show(`not synced — ${status.message ?? 'unknown error'}`, keepRestore);
+      }
+    },
+    isDirty: () => dirty,
+    getText: () => editor.value,
+    onWritable: () => {
+      if (dirty) {
+        immediateStorageUpdate();
+      }
     },
   });
 
@@ -371,37 +466,37 @@ const FLASH_MS = 1600;
     refreshDrawerState();
   }
 
-  // get or create key to store data
-  storage.sync.get(
-    [LEGACY_STORAGE_KEY, STORAGE_KEY],
-    (items: Record<string, string | undefined>) => {
-      if (items[LEGACY_STORAGE_KEY] != null) {
-        // Migrate stored data from the previous version to the new version
-        remoteStoredText = items[LEGACY_STORAGE_KEY];
-        storageObject[STORAGE_KEY] = remoteStoredText;
-        storage.sync.set(storageObject).catch((e: unknown) => {
-          console.warn(e);
-        });
-        // Remove the legacy key
-        storage.sync.remove(LEGACY_STORAGE_KEY).catch((e: unknown) => {
-          console.warn(e);
-        });
-      } else if (items[STORAGE_KEY] != null) {
-        remoteStoredText = items[STORAGE_KEY];
-      }
-      // Value defaults to an empty string if there is no stored value
-      editor.value = remoteStoredText;
-      updateUsage();
-      if (storage.local) {
-        storage.local.get(CURSOR_KEY, (localItems: Record<string, unknown>) => {
-          const cursor = localItems[CURSOR_KEY] as { start?: number; end?: number } | undefined;
-          editor.setSelectionRange(cursor?.start ?? editor.value.length);
-        });
-      } else {
-        editor.focus();
-      }
-    },
-  );
+  const showLoadedText = (text: string): void => {
+    editor.value = text;
+    updateUsage();
+    if (storage.local) {
+      storage.local.get(CURSOR_KEY, (localItems: Record<string, unknown>) => {
+        const cursor = localItems[CURSOR_KEY] as { start?: number; end?: number } | undefined;
+        editor.setSelectionRange(cursor?.start ?? editor.value.length);
+      });
+    } else {
+      editor.focus();
+    }
+  };
+
+  // start() reads, migrates, and repairs synced state; it rejects only when
+  // even the repair write is impossible (an oversized recovered document), in
+  // which case the newest local mirror is the best text we still hold. Sync
+  // stays blocked or unblocked by the store's own state either way.
+  syncStore
+    .start()
+    .then(showLoadedText)
+    .catch((e: unknown) => {
+      console.warn(e);
+      banner.show('could not read synced text — showing the newest local backup');
+      return syncStore.readNewestBackup().then((backup: string | null) => {
+        showLoadedText(backup ?? '');
+      });
+    })
+    .catch((e: unknown) => {
+      console.warn(e);
+      showLoadedText('');
+    });
 
   // ── Wiring ───────────────────────────────────────────────────
 
@@ -436,6 +531,10 @@ const FLASH_MS = 1600;
         return;
       }
       editor.value = '';
+      // Same pairing as onInput: clearing is a local edit, so it must survive a
+      // blocked or racing write instead of being undone by the next remote apply.
+      dirty = true;
+      syncStore.noteLocalEdit();
       // Immediate write: a throttled call could be silently dropped inside an
       // open throttle window, leaving the old text in sync storage while the
       // UI reports "cleared".
@@ -512,11 +611,16 @@ const FLASH_MS = 1600;
     }
   });
 
-  // Best-effort flush of unsynced text when the page goes away or is hidden —
-  // the throttle's trailing edge can't fire after the page is gone.
+  // Best-effort flush of unsynced text when the page goes away or is hidden.
+  // Nothing here is guaranteed to land: the trailing edge of both write
+  // throttles can be lost once the page is gone, the immediate path is itself
+  // rate-guarded, and the backup is a get-then-set pair teardown can cut in
+  // half. The durable recovery sources are sync storage and the 20s throttled
+  // mirror, which means a lost teardown costs at most BACKUP_MIRROR_MS of text.
   const flushIfDirty = (): void => {
     if (dirty) {
       immediateStorageUpdate();
+      mirrorToBackup();
     }
   };
   globalThis.addEventListener?.('pagehide', flushIfDirty);
@@ -526,21 +630,10 @@ const FLASH_MS = 1600;
     }
   });
 
-  // Apply remote edits (another device wrote v2) when there are no local
-  // unsynced changes; with local edits pending, local wins — same conflict
-  // behavior as before, but the common two-device case now stays in sync.
+  // A remote document can arrive split across several onChanged batches, so
+  // the store settles them before deciding anything; it also owns the
+  // local-edits-win rule and the conflict repair.
   storage.onChanged?.addListener?.((changes, areaName) => {
-    if (areaName !== 'sync' || !(STORAGE_KEY in changes)) {
-      return;
-    }
-    const newValue = changes[STORAGE_KEY].newValue;
-    if (typeof newValue !== 'string' || newValue === editor.value || dirty) {
-      return;
-    }
-    remoteStoredText = newValue;
-    storageObject[STORAGE_KEY] = newValue;
-    editor.value = newValue;
-    updateUsage();
-    updateLastSynced();
+    syncStore.handleChanges(changes, areaName);
   });
 })(chrome);

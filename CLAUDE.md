@@ -5,22 +5,26 @@
 ## Architecture Quick Reference
 
 - UI page: `public/html/index.html` with logic in `src/main.ts`
+- Editor: `src/editor.ts` (line-diff rendering, external applies); banner: `src/banner.ts` (data events)
 - Service worker: `src/service_worker.ts` (tab management only)
 - Shared utilities: `src/utils.ts` (throttle function)
-- Sync storage key: `v2` in `chrome.storage.sync` (8,192 byte limit)
-- Local storage key: `cursor` in `chrome.storage.local` (cursor position)
-- Throttle: leading-edge, ~4 second delay calculated from `MAX_WRITE_OPERATIONS_PER_HOUR`
+- Sync format: `src/sync_format.ts` (pure pack/assemble, Chromium-exact byte metering)
+- Sync orchestration: `src/sync_store.ts` (`SyncStore`: startup, migration, writes, conflict protection). `main.ts` never writes sync directly.
+- Sync storage keys: head `v2`, chunks `v2x_0..12` (value `"<rev>\0<piece>"`), meta `v2m` (`{v,rev,writerId,chunks,len,hash}`) — 102,400 byte total quota, 8,192 per item
+- Local storage keys: `cursor`, `theme`, `settings`, `countMode`, `writerId`, backup ring `backup_0..2`
+- Throttle: leading + trailing edge, 4,000 ms delay (half the sync write-op quota rate); immediate flushes (Cmd/Ctrl+S) rate-guarded at 1,000 ms
+- Test harness: `src/test/fake_chrome_storage.ts` (`FakeSyncWorld`) for stateful multi-device storage tests
 
 ## Code Patterns
 
 IIFE pattern: Both `main.ts` and `service_worker.ts` wrap logic in IIFEs that receive `chrome` as a parameter.
 
-Storage writes always use `.then()` / `.catch()` chains (not await), and update UI on success:
+Storage writes in `main.ts` use `.then()` / `.catch()` chains (not await), and update UI on success:
 ```typescript
-storage.sync.set(storageObject)
-  .then(() => { updateUsage(); updateLastSynced(); })
+storage.local?.set({ [SETTINGS_KEY]: settings })
   .catch((e: unknown) => { console.warn(e); });
 ```
+`SyncStore` (`src/sync_store.ts`) is the exception: it is async/await internally and owns every `storage.sync` write.
 
 Event listeners are attached imperatively after DOM element lookup with null guards:
 ```typescript

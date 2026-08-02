@@ -465,3 +465,56 @@ body.ww-drawer-open #drawer-toggle {
 .drawer-items button:disabled {
   cursor: default;
 }
+
+/* ── Banner ───────────────────────────────────────────────────── */
+
+/* Persistent strip for data events; it sits above the wordmark and the
+   drawer so a message about the user's text is never obscured. */
+#banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--text-main);
+  background: var(--bg-top);
+  border-bottom: 1px solid var(--accent);
+}
+
+#banner[hidden] {
+  display: none;
+}
+
+#banner button {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: monospace;
+  font-size: 12px;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+}
+
+#banner button:hover {
+  background: var(--hover-bg);
+  color: var(--hover-text);
+  border-color: var(--accent);
+}
+
+#banner button[hidden] {
+  display: none;
+}
+
+#banner-text {
+  flex: 1;
+}
+
+#banner-dismiss {
+  border-color: transparent;
+}

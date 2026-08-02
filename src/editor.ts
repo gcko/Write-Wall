@@ -48,12 +48,25 @@ class MarkdownEditor {
   }
 
   set value(text: string) {
+    const previous = this.lines;
+    // Index of the raw (contenteditable) node in the DOM before the patch —
+    // captured before clamping moves `active`, because that node has to be
+    // rebuilt wherever it ends up.
+    const previousActive = this.active;
     this.lines = text.split('\n');
     if (this.active >= this.lines.length) {
       this.active = this.lines.length - 1;
     }
     this.caretOffset = Math.min(this.caretOffset, this.lines[this.active].length);
-    this.renderAll();
+    this.patchFrom(previous, previousActive);
+  }
+
+  // External replacement (remote sync apply): patch the changed lines and keep
+  // the caret at the same absolute offset, clamped to the new document.
+  applyExternal(text: string): void {
+    const absolute = this.selectionStart;
+    this.value = text;
+    this.setSelectionRange(Math.min(absolute, text.length));
   }
 
   get activeLineElement(): HTMLElement | null {
@@ -88,9 +101,9 @@ class MarkdownEditor {
   // 'open'/'close' role for each ``` delimiter line, null elsewhere — lets
   // CSS draw the fence box's top and bottom borders correctly (including for
   // empty fences, where the two delimiters are adjacent).
-  private fenceRoles(): (null | 'open' | 'close')[] {
+  private fenceRoles(lines: string[] = this.lines): (null | 'open' | 'close')[] {
     let open = false;
-    return this.lines.map((line) => {
+    return lines.map((line) => {
       if (/^```/.test(line)) {
         open = !open;
         return open ? 'open' : 'close';
@@ -106,6 +119,72 @@ class MarkdownEditor {
     this.lines.forEach((_line, index) => {
       this.container.appendChild(this.buildLine(index, fences[index], roles[index]));
     });
+  }
+
+  // Minimal DOM update after a whole-value replacement: trim the common
+  // prefix/suffix, splice the differing middle, then refresh any retained line
+  // whose fence context changed (fence state and roles ripple across lines).
+  // Falls back to a full render whenever the DOM is not a projection of
+  // `previous`, which is the only case the trim cannot reason about.
+  private patchFrom(previous: string[], previousActive: number): void {
+    const next = this.lines;
+    if (this.container.children.length !== previous.length) {
+      this.renderAll();
+      return;
+    }
+    let prefix = 0;
+    while (prefix < previous.length && prefix < next.length && previous[prefix] === next[prefix]) {
+      prefix++;
+    }
+    if (prefix === previous.length && previous.length === next.length) {
+      return; // identical text: nothing to do
+    }
+    let suffix = 0;
+    while (
+      suffix < previous.length - prefix &&
+      suffix < next.length - prefix &&
+      previous[previous.length - 1 - suffix] === next[next.length - 1 - suffix]
+    ) {
+      suffix++;
+    }
+    const fences = computeFenceStates(next);
+    const roles = this.fenceRoles();
+    const end = next.length - suffix;
+    for (let i = previous.length - suffix - 1; i >= prefix; i--) {
+      this.container.children[i].remove();
+    }
+    const anchor = this.container.children[prefix] ?? null;
+    for (let i = prefix; i < end; i++) {
+      this.container.insertBefore(this.buildLine(i, fences[i], roles[i]), anchor);
+    }
+    // Reindex the retained lines and rebuild the ones whose fence context (or
+    // active state) changed. Retained tail lines map back to their old index
+    // through the length delta. `was === previousActive` catches the node that
+    // carried the raw contenteditable line before the patch: if its new index
+    // is no longer the active one it has to be re-rendered, or the DOM keeps a
+    // second ww-active node whose listeners still write to its old line index.
+    const previousFences = computeFenceStates(previous);
+    const previousRoles = this.fenceRoles(previous);
+    const delta = next.length - previous.length;
+    for (let i = 0; i < next.length; i++) {
+      if (i >= prefix && i < end) {
+        continue;
+      }
+      const el = this.container.children[i] as HTMLElement;
+      // Only the retained tail shifts, and only when the line count changed.
+      if (delta !== 0 && i >= end) {
+        el.dataset.index = String(i);
+      }
+      const was = i < prefix ? i : i - delta;
+      if (
+        fences[i] !== previousFences[was] ||
+        roles[i] !== previousRoles[was] ||
+        i === this.active ||
+        was === previousActive
+      ) {
+        this.container.replaceChild(this.buildLine(i, fences[i], roles[i]), el);
+      }
+    }
   }
 
   private buildLine(index: number, inFence: boolean, role: null | 'open' | 'close'): HTMLElement {
@@ -173,16 +252,12 @@ class MarkdownEditor {
       box.setAttribute('role', 'checkbox');
       box.setAttribute('aria-checked', rendered.checked ? 'true' : 'false');
       box.setAttribute('tabindex', '0');
-      // Allow Space/Enter to toggle the checkbox
+      // Allow Space/Enter to toggle the checkbox. Read the line index from the
+      // dataset at event time: patching can reindex a retained line node.
       box.addEventListener('keydown', (event: KeyboardEvent) => {
         if ((event.code === 'Space' || event.key === 'Enter') && event.target === box) {
           event.preventDefault();
-          const toggled = toggleTaskLine(this.lines[index]);
-          if (toggled != null) {
-            this.lines[index] = toggled;
-            this.refreshRendered();
-            this.onInput();
-          }
+          this.toggleTask(Number(el.dataset.index));
         }
       });
       const label = document.createElement('span');
@@ -206,6 +281,15 @@ class MarkdownEditor {
       return;
     }
     el.innerHTML = rendered.html;
+  }
+
+  private toggleTask(index: number): void {
+    const toggled = toggleTaskLine(this.lines[index]);
+    if (toggled != null) {
+      this.lines[index] = toggled;
+      this.refreshRendered();
+      this.onInput();
+    }
   }
 
   // Re-render every non-active line (fence state can ripple across lines).
@@ -494,12 +578,7 @@ class MarkdownEditor {
       return;
     }
     if (target.classList.contains('ww-checkbox')) {
-      const toggled = toggleTaskLine(this.lines[index]);
-      if (toggled != null) {
-        this.lines[index] = toggled;
-        this.refreshRendered();
-        this.onInput();
-      }
+      this.toggleTask(index);
       return;
     }
     this.activate(index, this.lines[index].length);
