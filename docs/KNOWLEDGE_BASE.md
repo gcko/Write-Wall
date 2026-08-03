@@ -16,4 +16,4 @@ Common issues (pnpm, nave, stale builds, test failures, sync quota), debugging t
 Design of the sharded `chrome.storage.sync` format: head/chunk/meta keys, Chromium-exact byte metering, the ~95 KB ceiling, conflict protection, and mixed-version fleet safety.
 -> docs/superpowers/specs/2026-08-01-sharded-sync-storage-design.md
 
-<!-- docs-synced-through: 000194d (2026-08-03) -->
+<!-- docs-synced-through: f02da2c (2026-08-03) -->
