@@ -1,97 +1,92 @@
 # Write Wall
 
-Write Wall is a Chrome Extension (Manifest V3) that provides a synced text pad
-backed by `chrome.storage.sync`, so text is shared across the signed-in Chrome
-account. The UI is a single page with a textarea and byte counter, and the
-extension opens that page when the action icon is clicked.
+**A markdown scratchpad that lives in your browser and follows you everywhere.**
 
-## Overview
+Write Wall is a Chrome extension (Manifest V3) that gives you a distraction-free
+writing pad synced through your Chrome account via `chrome.storage.sync` — no
+servers, no sign-ups, no tracking.
 
-Write Wall focuses on quick, low-friction note syncing for short text snippets.
-It is intentionally minimal: no accounts, no cloud backend, and no setup beyond
-signing in to Chrome.
+**[➜ Install from the Chrome Web Store](https://chromewebstore.google.com/detail/write-wall/epjfmbaohjlmcbnmobhiilcdccjbpmlg)**
+
+[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/epjfmbaohjlmcbnmobhiilcdccjbpmlg?label=chrome%20web%20store)](https://chromewebstore.google.com/detail/write-wall/epjfmbaohjlmcbnmobhiilcdccjbpmlg)
+[![Chrome Web Store Users](https://img.shields.io/chrome-web-store/users/epjfmbaohjlmcbnmobhiilcdccjbpmlg)](https://chromewebstore.google.com/detail/write-wall/epjfmbaohjlmcbnmobhiilcdccjbpmlg)
+[![CI](https://img.shields.io/github/actions/workflow/status/gcko/Write-Wall/ci.yml?branch=main&label=CI)](https://github.com/gcko/Write-Wall/actions/workflows/ci.yml)
+[![License: CC BY-SA 4.0](https://img.shields.io/badge/license-CC%20BY--SA%204.0-lightgrey)](LICENSE)
 
 ## Features
 
-- Syncs text across devices signed in to the same Chrome account using  `chrome.storage.sync`
-- Shows bytes used to help stay within sync quota limits
-- Migrates legacy storage key (`text`) to the current key (`v2`)
-- Runs entirely in-browser, no external services
+- **Live markdown rendering** — the caret line shows raw markdown, every other
+  line renders as rich text: headings, bold/italic/strikethrough, inline code,
+  links, blockquotes, task lists with clickable checkboxes, bullet and numbered
+  lists, code fences, and horizontal rules.
+- **Focus mode & typewriter mode** — dim everything but the current line, or
+  keep the caret vertically centered while you type.
+- **Serverless sync** — your text rides Chrome's own sync
+  (`chrome.storage.sync`), shared across every machine signed into your
+  account. Documents grow to ~95 KB by sharding across sync keys, with
+  conflict protection across devices and a local backup ring with one-click
+  restore.
+- **Markdown export** — download your pad as `write-wall.md`, or copy
+  everything with one click.
+- **Make it yours** — settings drawer with typeface (Mono/Serif/Sans), font
+  size, line width, line height, and light/dark themes with system preference
+  detection.
+- **Quota awareness** — status bar shows word/character/byte counts and a sync
+  quota meter that warns before you hit the limit.
+- **Data backup & conflict recovery** — persistent in-app banner for sync
+  conflicts, storage limits, and incomplete syncs, with one-click restore from
+  a local backup ring.
+- **Zero data collection** — the only permission is `storage`. No analytics,
+  no network requests, nothing leaves Chrome.
 
-## How It Works
+## Screenshots
 
-- The UI lives in `public/html/index.html` with logic in `src/main.ts`
-- Text is saved to `chrome.storage.sync` under the `v2` key
-- Writes are throttled to respect Chrome sync quotas
-- The byte counter uses `chrome.storage.sync.getBytesInUse`
+Screenshots coming soon. See `docs/images/` for where they'll live once captured.
 
-## Installation
+## Install
 
-### From source (development)
+### From the Chrome Web Store (recommended)
 
-1. Install dependencies:
-   ```bash
-   pnpm install
-   ```
-2. Build in watch mode:
-   ```bash
-   pnpm develop
-   ```
-3. Load `dist/` as an unpacked extension in `chrome://extensions`
+Grab it here: [Write Wall on the Chrome Web Store](https://chromewebstore.google.com/detail/write-wall/epjfmbaohjlmcbnmobhiilcdccjbpmlg).
+Click the extension icon and start writing.
 
-## Usage
+### Build from source
 
-1. Click the extension action icon to open the Write Wall page.
-2. Type or paste text into the textarea.
-3. The text syncs across devices signed into the same Chrome account.
-4. The byte counter shows current sync usage.
+Requirements: Node.js 22 or 24 (`nave` recommended; see `.naverc`) and pnpm
+via corepack.
 
-## Development
+```bash
+pnpm install        # install dependencies
+pnpm develop        # build in watch mode (or: pnpm build for production + app.zip)
+```
 
-### Requirements
+Then load the `dist/` directory as an unpacked extension at
+`chrome://extensions` (enable Developer mode → "Load unpacked").
 
-- Node.js 22 or 24 (`nave` is recommended; see `.naverc`)
-- pnpm (use corepack, do not install via `npm`)
+Useful scripts: `pnpm test` (Vitest), `pnpm lint` / `pnpm lint:fix` (Biome),
+`pnpm type:check` (TypeScript), `pnpm verify-version` (package/manifest
+version parity).
 
-### Common Scripts
+## How it works
 
-- `pnpm develop`: Vite build in watch mode
-- `pnpm build`: Production build + `app.zip` packaging
-- `pnpm lint`: Biome checks
-- `pnpm lint:fix`: Biome auto-fix
-- `pnpm type:check`: TypeScript type check
-- `pnpm test`: Vitest test suite
-- `pnpm verify-version`: Ensure version parity between package and manifest
+Everything persists through Chrome's storage APIs — there is no backend. The
+document is sharded across `chrome.storage.sync` keys (head `v2`, chunks
+`v2x_0..12`, meta `v2m`), raising the ceiling to ~95 KB against Chrome's
+102,400-byte sync quota. Writes are throttled to respect Chrome's sync write
+limits, remote updates patch only changed lines so the caret never jumps, and
+torn or conflicting sync deliveries never reach the editor. See
+[docs/KNOWLEDGE_BASE.md](docs/KNOWLEDGE_BASE.md) for the full architecture.
 
-### Project Layout
+## Contributing
 
-- `src/main.ts`: UI logic and storage sync
-- `src/service_worker.ts`: Opens the UI when the action icon is clicked
-- `public/manifest.json`: MV3 manifest copied to `dist/`
-- `dist/`: Build output (generated)
-
-## Release Workflow
-
-1. Update `package.json` and `public/manifest.json` to the same version.
-2. Verify with:
-   ```bash
-   pnpm verify-version
-   ```
-3. Tag the release as `vX.Y.Z` and push the tag.
-
-Tag pushes trigger the publish workflow, which builds the extension and uploads
-`app.zip` to the Chrome Web Store (requires repository secrets to be configured).
-
-## Communication
-
-- Bug reports and feature requests: GitHub Issues
-- Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md)
-- Security reports: see [SECURITY.md](SECURITY.md)
+Bug reports and feature requests are welcome via GitHub Issues. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and
+[SECURITY.md](SECURITY.md) for reporting security issues.
 
 ## License
 
-This project is licensed under the Creative Commons Attribution-ShareAlike 4.0
-International Public License. See [LICENSE](LICENSE).
+[Creative Commons Attribution-ShareAlike 4.0 International](LICENSE)
+(CC BY-SA 4.0).
 
 ## Changelog
 
