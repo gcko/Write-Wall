@@ -92,10 +92,29 @@ type(scope)!: subject
 
 ## Release Process
 
-1. Update version in both `package.json` and `public/manifest.json`
-2. Run `pnpm verify-version` to confirm parity
-3. Tag as `vX.Y.Z` and push the tag
-4. Publish workflow builds and uploads `app.zip` to Chrome Web Store
+The kickoff is a tag push and nothing else:
+
+1. Land everything for the release on `main` via PRs, including a
+   `## [X.Y.Z]` section in `CHANGELOG.md` (it becomes the GitHub release
+   notes). Bump versions with `pnpm set-version X.Y.Z` in the release PR.
+2. `git tag vX.Y.Z <commit-on-main> && git push origin vX.Y.Z`
+
+The publish workflow then:
+
+- **validates**: strict semver (`vMAJOR.MINOR.PATCH` only), the new tag must
+  sort above every existing release tag (versions only go up), and the tagged
+  commit must be on `main`
+- **publishes**: syncs `package.json` + `public/manifest.json` to the tag
+  version in the build workspace (`scripts/set-version.cjs`), tests, builds,
+  verifies the version inside `app.zip`, and uploads to the Chrome Web Store
+- **releases**: creates the GitHub release from the tag's `CHANGELOG.md`
+  section (falls back to a changelog link if the section is missing)
+- **sync-versions**: if the repo files lagged the tag, opens a PR bringing
+  them back in line (the store still received the tagged version)
+
+A bad tag (non-semver, lower than an existing tag, or off-main) fails in
+`validate` and nothing is published. Tags are never moved or deleted; to fix
+a mistake, tag the next higher version.
 
 ## Adding Code
 

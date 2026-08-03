@@ -43,7 +43,7 @@ if (copyButtonEl) {
 ## CI/CD Details
 
 - CI runs on PRs: lint, type check, test (Node 22 + 24 matrix)
-- Publish runs on `v*.*.*` tag push: builds + uploads `app.zip` to Chrome Web Store
+- Publish runs on `v*.*.*` tag push: validates (strict semver, forward-only, tag on main), syncs version files to the tag, tests + builds + uploads `app.zip`, creates the GitHub release from the changelog, opens a version-sync PR on drift
 - Secrets needed: `CHROME_EXTENSION_ID`, `CHROME_CLIENT_ID`, `CHROME_CLIENT_SECRET`, `CHROME_REFRESH_TOKEN`
 
 ## Deep Dives
