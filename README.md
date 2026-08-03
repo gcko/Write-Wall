@@ -1,10 +1,11 @@
 # Write Wall
 
-**A markdown scratchpad that lives in your browser and follows you everywhere.**
+**A distraction-free markdown scratchpad, synced by Chrome itself.**
 
-Write Wall is a Chrome extension (Manifest V3) that gives you a distraction-free
-writing pad synced through your Chrome account via `chrome.storage.sync` — no
-servers, no sign-ups, no tracking.
+Write Wall is a Chrome extension (Manifest V3). Your text travels through
+Chrome's built-in sync (`chrome.storage.sync`), the same channel that carries
+your bookmarks: there is no Write Wall server, no account to create, and no
+tracking.
 
 **[➜ Install from the Chrome Web Store](https://chromewebstore.google.com/detail/write-wall/epjfmbaohjlmcbnmobhiilcdccjbpmlg)**
 
@@ -16,18 +17,17 @@ servers, no sign-ups, no tracking.
 ## Features
 
 - **Live markdown rendering** — the caret line shows raw markdown, every other
-  line renders as rich text: headings, bold/italic/strikethrough, inline code,
+  line renders as rich text: headings (up to `###`), bold/italic/strikethrough, inline code,
   links, blockquotes, task lists with clickable checkboxes, bullet and numbered
   lists, code fences, and horizontal rules.
 - **Focus mode & typewriter mode** — dim everything but the current line, or
   keep the caret vertically centered while you type.
-- **Serverless sync** — your text rides Chrome's own sync
-  (`chrome.storage.sync`), shared across every machine signed into your
-  account. Documents grow to ~95 KB by sharding across sync keys, with
-  conflict protection across devices and versions.
+- **Sync without a backend** — Chrome's built-in sync carries your text to
+  every machine where Chrome Sync is on. Documents grow to ~95 KB by sharding
+  across sync keys, with conflict protection across devices and versions.
 - **Markdown export** — download your pad as `write-wall.md`, or copy
   everything with one click.
-- **Make it yours** — settings drawer with typeface (Mono/Serif/Sans), font
+- **Typography & theme** — settings drawer with typeface (Mono/Serif/Sans), font
   size, line width, line height, and light/dark themes with system preference
   detection.
 - **Quota awareness** — status bar shows word/character/byte counts and a sync
@@ -36,7 +36,7 @@ servers, no sign-ups, no tracking.
   conflicts, storage limits, and incomplete syncs, with one-click restore from
   a local backup ring.
 - **Zero data collection** — the only permission is `storage`. No analytics,
-  no network requests, nothing leaves Chrome.
+  no telemetry, and no network calls of its own.
 
 ## Screenshots
 
@@ -55,6 +55,7 @@ Requirements: Node.js 22 or 24 (`nave` recommended; see `.naverc`) and pnpm
 via corepack.
 
 ```bash
+corepack enable     # provides pnpm (run `nave use` first to pick up the pinned Node)
 pnpm install        # install dependencies
 pnpm develop        # build in watch mode (or: pnpm build for production + app.zip)
 ```
@@ -68,12 +69,13 @@ version parity).
 
 ## How it works
 
-Everything persists through Chrome's storage APIs — there is no backend. The
-document is sharded across `chrome.storage.sync` keys, raising the ceiling to
-~95 KB against Chrome's 102,400-byte sync quota. Writes are throttled to
-respect Chrome's sync write
-limits, remote updates patch only changed lines so the caret never jumps, and
-torn or conflicting sync deliveries never reach the editor. See
+Everything persists through Chrome's storage APIs; the only server involved
+is Chrome Sync itself, and Write Wall runs none of its own. The document is
+sharded across `chrome.storage.sync` keys, raising the ceiling to ~95 KB
+against Chrome's 102,400-byte sync quota. Writes are throttled to respect
+Chrome's sync write limits, remote updates patch only changed lines and
+preserve the caret position, and torn or conflicting sync deliveries never
+reach the editor. See
 [docs/KNOWLEDGE_BASE.md](docs/KNOWLEDGE_BASE.md) for the full architecture.
 
 ## Contributing
