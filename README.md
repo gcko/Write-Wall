@@ -24,8 +24,7 @@ servers, no sign-ups, no tracking.
 - **Serverless sync** — your text rides Chrome's own sync
   (`chrome.storage.sync`), shared across every machine signed into your
   account. Documents grow to ~95 KB by sharding across sync keys, with
-  conflict protection across devices and a local backup ring with one-click
-  restore.
+  conflict protection across devices and versions.
 - **Markdown export** — download your pad as `write-wall.md`, or copy
   everything with one click.
 - **Make it yours** — settings drawer with typeface (Mono/Serif/Sans), font
