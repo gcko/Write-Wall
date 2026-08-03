@@ -3,7 +3,8 @@
   "version": "4.0.0",
   "manifest_version": 3,
   "incognito": "split",
-  "description": "A simple, sync-able text pad similar to Write Space",
+  "description": "A distraction-free markdown scratchpad that syncs through your Chrome account. No sign-up, no tracking.",
+  "homepage_url": "https://github.com/gcko/Write-Wall",
   "icons": {
     "16": "images/icon-16.png",
     "19": "images/icon.png",
