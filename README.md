@@ -69,9 +69,9 @@ version parity).
 ## How it works
 
 Everything persists through Chrome's storage APIs — there is no backend. The
-document is sharded across `chrome.storage.sync` keys (head `v2`, chunks
-`v2x_0..12`, meta `v2m`), raising the ceiling to ~95 KB against Chrome's
-102,400-byte sync quota. Writes are throttled to respect Chrome's sync write
+document is sharded across `chrome.storage.sync` keys, raising the ceiling to
+~95 KB against Chrome's 102,400-byte sync quota. Writes are throttled to
+respect Chrome's sync write
 limits, remote updates patch only changed lines so the caret never jumps, and
 torn or conflicting sync deliveries never reach the editor. See
 [docs/KNOWLEDGE_BASE.md](docs/KNOWLEDGE_BASE.md) for the full architecture.
