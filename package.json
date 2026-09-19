@@ -29,7 +29,7 @@
     "@testing-library/user-event": "^14.6.1",
     "@types/chrome": "^0.2.2",
     "@vitest/coverage-v8": "^4.1.10",
-    "adm-zip": "^0.6.0",
+    "adm-zip": "^0.6.1",
     "corepack": "^0.35.0",
     "globals": "^17.7.0",
     "husky": "^9.1.7",
